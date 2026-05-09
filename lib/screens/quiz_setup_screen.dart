@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants/colors.dart';
 import '../models/category_model.dart';
 import '../widgets/custom_button.dart';
+import '../data/sample_questions.dart';
+import 'quiz_screen.dart';
 
 class QuizSetupScreen extends StatefulWidget {
   final CategoryModel category;
@@ -232,11 +234,30 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                     text: '🚀  Start Quiz',
                     color: cat.color,
                     onPressed: () {
-                      // Navigate to QuizScreen (Step 4)
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Quiz Screen coming in Step 4!'),
-                          backgroundColor: AppColors.primary,
+                      final questions = getQuestionsForCategory(
+                        widget.category.id,
+                        _questionCount,
+                        _difficulty,
+                      );
+
+                      if (questions.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('No questions available for this selection.'),
+                            backgroundColor: AppColors.error,
+                          ),
+                        );
+                        return;
+                      }
+
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => QuizScreen(
+                            category: widget.category,
+                            questions: questions,
+                            difficulty: _difficulty,
+                          ),
                         ),
                       );
                     },
