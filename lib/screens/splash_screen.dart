@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'login_screen.dart';
-import 'home_screen.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  // autoNavigate: true  → used from normal app launch flow
+  // autoNavigate: false → used by AuthGate while loading
+  final bool autoNavigate;
+  const SplashScreen({super.key, this.autoNavigate = true});
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -27,51 +27,26 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
+      CurvedAnimation(
+          parent: _controller, curve: Curves.easeIn),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.5, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.elasticOut),
+    _scaleAnimation =
+        Tween<double>(begin: 0.5, end: 1).animate(
+      CurvedAnimation(
+          parent: _controller, curve: Curves.elasticOut),
     );
 
     _controller.forward();
 
-    // Check login status after 3 seconds
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) _checkLoginStatus();
-    });
-  }
-
-  // ── Check if user is already logged in ──────────────────────
-  void _checkLoginStatus() async {
-    try {
-      final User? currentUser = FirebaseAuth.instance.currentUser;
-
-      if (currentUser != null) {
-        // Reload user to verify they still exist in Firebase
-        await currentUser.reload();
-        
-        // User still exists → go to Home
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
-        );
-      } else {
-        // No user → go to Login
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
-      }
-    } catch (e) {
-      // User was deleted from Firebase → force logout and go to Login
-      await FirebaseAuth.instance.signOut();
-      if (mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-        );
-      }
+    // Only auto-navigate to LoginScreen when used standalone
+    if (widget.autoNavigate) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          // AuthGate handles routing — just pop back
+          Navigator.of(context).pushReplacementNamed('/');
+        }
+      });
     }
   }
 
@@ -93,7 +68,6 @@ class _SplashScreenState extends State<SplashScreen>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // App Icon
                 Container(
                   width: 120,
                   height: 120,
@@ -102,7 +76,8 @@ class _SplashScreenState extends State<SplashScreen>
                     borderRadius: BorderRadius.circular(30),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF6C63FF).withOpacity(0.5),
+                        color: const Color(0xFF6C63FF)
+                            .withOpacity(0.5),
                         blurRadius: 30,
                         spreadRadius: 5,
                       ),
@@ -114,10 +89,7 @@ class _SplashScreenState extends State<SplashScreen>
                     color: Colors.white,
                   ),
                 ),
-
                 const SizedBox(height: 24),
-
-                // App Name
                 Text(
                   'QuizGame',
                   style: GoogleFonts.poppins(
@@ -126,10 +98,7 @@ class _SplashScreenState extends State<SplashScreen>
                     color: Colors.white,
                   ),
                 ),
-
                 const SizedBox(height: 8),
-
-                // Tagline
                 Text(
                   'Test Your Knowledge!',
                   style: GoogleFonts.poppins(
@@ -137,10 +106,7 @@ class _SplashScreenState extends State<SplashScreen>
                     color: Colors.white54,
                   ),
                 ),
-
                 const SizedBox(height: 60),
-
-                // Loading indicator
                 const CircularProgressIndicator(
                   color: Color(0xFF6C63FF),
                 ),

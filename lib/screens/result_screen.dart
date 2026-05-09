@@ -6,6 +6,8 @@ import '../models/category_model.dart';
 import '../providers/quiz_provider.dart';
 import '../providers/stats_provider.dart';
 import 'home_screen.dart';
+import '../providers/leaderboard_provider.dart';
+
 
 class ResultScreen extends ConsumerWidget {
   final CategoryModel category;
@@ -219,12 +221,16 @@ class ResultScreen extends ConsumerWidget {
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const HomeScreen()),
-                    (route) => false,
-                  ),
+                  onPressed: () {
+                    // Invalidate leaderboard so it refetches on next open
+                    ref.invalidate(globalLeaderboardProvider);
+                    ref.invalidate(weeklyLeaderboardProvider);
+                    Navigator.pushAndRemoveUntil(
+                      context,
+                      MaterialPageRoute(builder: (_) => const HomeScreen()),
+                      (route) => false,
+                    );
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: category.color,
                     shape: RoundedRectangleBorder(
