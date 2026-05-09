@@ -16,6 +16,7 @@ import 'quiz_setup_screen.dart';
 import 'leaderboard_screen.dart';
 import 'multiplayer_lobby_screen.dart';
 import '../main.dart';
+import '../providers/category_provider.dart';
 
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -62,13 +63,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // Use real-time stream instead of static provider
     final statsAsync = ref.watch(userStreamProvider);
     final dailyDone = ref.watch(dailyChallengeProvider);
+    final countsAsync = ref.watch(categoryCountsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       body: IndexedStack(
         index: _selectedIndex,
         children: [
-          _buildHomeTab(statsAsync, dailyDone),
+          _buildHomeTab(statsAsync, dailyDone, countsAsync),
           const LeaderboardScreen(),
           const MultiplayerLobbyScreen(),
           _buildProfileTab(statsAsync),
@@ -131,7 +133,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── Home Tab ─────────────────────────────────────────────────────
   Widget _buildHomeTab(
-      AsyncValue<UserModel?> statsAsync, bool dailyDone) {
+      AsyncValue<UserModel?> statsAsync, bool dailyDone,
+      AsyncValue<Map<String, int>> countsAsync,) {
     return CustomScrollView(
       slivers: [
         // ── App Bar ───────────────────────────────────────────────
@@ -379,13 +382,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     (context, index) {
                       final category =
                           _filteredCategories[index];
+                      final counts = countsAsync.value; // null while loading
                       return CategoryCard(
                         category: category,
+                        questionCount: counts?[category.id], // null shows shimmer
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => QuizSetupScreen(
-                                category: category),
+                            builder: (_) => QuizSetupScreen(category: category),
                           ),
                         ),
                       );

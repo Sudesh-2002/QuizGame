@@ -8,7 +8,6 @@ final List<CategoryModel> appCategories = [
     emoji: '🌍',
     color: const Color(0xFF6C63FF),
     darkColor: const Color(0xFF4B44CC),
-    totalQuestions: 50,
   ),
   CategoryModel(
     id: 'science',
@@ -16,7 +15,6 @@ final List<CategoryModel> appCategories = [
     emoji: '🔬',
     color: const Color(0xFF00BCD4),
     darkColor: const Color(0xFF0097A7),
-    totalQuestions: 40,
   ),
   CategoryModel(
     id: 'history',
@@ -24,7 +22,6 @@ final List<CategoryModel> appCategories = [
     emoji: '🏛️',
     color: const Color(0xFFFF9800),
     darkColor: const Color(0xFFF57C00),
-    totalQuestions: 35,
   ),
   CategoryModel(
     id: 'sports',
@@ -32,7 +29,6 @@ final List<CategoryModel> appCategories = [
     emoji: '⚽',
     color: const Color(0xFF4CAF50),
     darkColor: const Color(0xFF388E3C),
-    totalQuestions: 45,
   ),
   CategoryModel(
     id: 'movies',
@@ -40,7 +36,6 @@ final List<CategoryModel> appCategories = [
     emoji: '🎬',
     color: const Color(0xFFE91E63),
     darkColor: const Color(0xFFC2185B),
-    totalQuestions: 50,
   ),
   CategoryModel(
     id: 'music',
@@ -48,7 +43,6 @@ final List<CategoryModel> appCategories = [
     emoji: '🎵',
     color: const Color(0xFF9C27B0),
     darkColor: const Color(0xFF7B1FA2),
-    totalQuestions: 40,
   ),
   CategoryModel(
     id: 'technology',
@@ -56,7 +50,6 @@ final List<CategoryModel> appCategories = [
     emoji: '💻',
     color: const Color(0xFF2196F3),
     darkColor: const Color(0xFF1976D2),
-    totalQuestions: 35,
   ),
   CategoryModel(
     id: 'food',
@@ -64,7 +57,6 @@ final List<CategoryModel> appCategories = [
     emoji: '🍕',
     color: const Color(0xFFFF5722),
     darkColor: const Color(0xFFE64A19),
-    totalQuestions: 30,
   ),
   CategoryModel(
     id: 'geography',
@@ -72,7 +64,6 @@ final List<CategoryModel> appCategories = [
     emoji: '🗺️',
     color: const Color(0xFF009688),
     darkColor: const Color(0xFF00796B),
-    totalQuestions: 40,
   ),
   CategoryModel(
     id: 'anime',
@@ -80,6 +71,5 @@ final List<CategoryModel> appCategories = [
     emoji: '🎌',
     color: const Color(0xFFFF4081),
     darkColor: const Color(0xFFF50057),
-    totalQuestions: 35,
   ),
 ];
