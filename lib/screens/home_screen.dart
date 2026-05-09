@@ -13,6 +13,7 @@ import '../widgets/daily_challenge_banner.dart';
 import 'login_screen.dart';
 import 'quiz_setup_screen.dart';
 import 'leaderboard_screen.dart';
+import 'multiplayer_lobby_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -62,7 +63,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           _buildHomeTab(user, dailyDone),
           const LeaderboardScreen(),
-          _buildComingSoon('👥', 'Multiplayer', 'Coming in Step 6!'),
+          const MultiplayerLobbyScreen(),
           _buildProfileTab(user),
         ],
       ),
