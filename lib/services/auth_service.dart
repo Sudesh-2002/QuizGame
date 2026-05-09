@@ -6,110 +6,75 @@ import '../models/user_model.dart';
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    forceCodeForRefreshToken: true,
-  );
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
   User? get currentUser => _auth.currentUser;
   Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  // ─── Email & Password Register ───────────────────────────────
+  // ── Register with Email ────────────────────────────────────────
   Future<UserModel?> registerWithEmail({
     required String email,
     required String password,
     required String username,
   }) async {
     try {
-      final UserCredential result = await _auth.createUserWithEmailAndPassword(
+      final UserCredential result =
+          await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
       );
-
       final User? user = result.user;
       if (user == null) return null;
 
+      // Use the exact username the user typed in the form
       await user.updateDisplayName(username);
 
       final UserModel newUser = UserModel(
         uid: user.uid,
-        username: username,
+        username: username, // exactly what they typed
         email: email,
         createdAt: DateTime.now(),
       );
-
-      // Try to save to Firestore but don't block navigation if it fails
-      try {
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .set(newUser.toMap());
-        print('✅ User saved to Firestore');
-      } catch (firestoreError) {
-        print('⚠️ Firestore save failed: $firestoreError');
-        // Continue anyway — auth succeeded
-      }
-
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set(newUser.toMap());
       return newUser;
-
     } on FirebaseAuthException catch (e) {
       throw _handleAuthError(e.code);
-    } catch (e) {
-      print('Register error: $e');
-      throw 'Registration failed. Please try again.';
     }
   }
 
-  // ─── Email & Password Login ───────────────────────────────────
+  // ── Login with Email ───────────────────────────────────────────
   Future<UserModel?> loginWithEmail({
     required String email,
     required String password,
   }) async {
     try {
-      final UserCredential result = await _auth.signInWithEmailAndPassword(
+      final UserCredential result =
+          await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
-
       final User? user = result.user;
       if (user == null) return null;
-
-      // Try Firestore first, fallback to basic model
-      try {
-        final firestoreUser = await _getUserFromFirestore(user.uid);
-        if (firestoreUser != null) return firestoreUser;
-      } catch (e) {
-        print('⚠️ Firestore fetch failed: $e');
-      }
-
-      // Fallback — return basic user model from Auth
-      return UserModel(
-        uid: user.uid,
-        username: user.displayName ?? 'Player',
-        email: user.email ?? '',
-        createdAt: DateTime.now(),
-      );
-
+      return await _getUserFromFirestore(user.uid);
     } on FirebaseAuthException catch (e) {
       throw _handleAuthError(e.code);
-    } catch (e) {
-      print('Login error: $e');
-      throw 'Login failed. Please try again.';
     }
   }
 
-  // ─── Google Sign-In ───────────────────────────────────────────
+  // ── Google Sign-In ─────────────────────────────────────────────
   Future<UserModel?> signInWithGoogle() async {
     try {
-      await _googleSignIn.signOut();
-    
-      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
-      
+      final GoogleSignInAccount? googleUser =
+          await _googleSignIn.signIn();
       if (googleUser == null) return null;
 
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
-
-      final AuthCredential credential = GoogleAuthProvider.credential(
+      final AuthCredential credential =
+          GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
@@ -119,70 +84,65 @@ class AuthService {
       final User? user = result.user;
       if (user == null) return null;
 
-      final UserModel userModel = UserModel(
-        uid: user.uid,
-        username: user.displayName ?? 'Player',
-        email: user.email ?? '',
-        photoUrl: user.photoURL ?? '',
-        createdAt: DateTime.now(),
-      );
+      // Extract FIRST NAME only from Google display name
+      final fullName = user.displayName ?? 'Player';
+      final firstName = fullName.trim().split(' ').first;
 
-      // Try to save to Firestore but don't block navigation
-      try {
-        final doc = await _firestore.collection('users').doc(user.uid).get();
-        if (!doc.exists) {
-          await _firestore
-              .collection('users')
-              .doc(user.uid)
-              .set(userModel.toMap());
-        }
-        print('✅ Google user saved to Firestore');
-      } catch (e) {
-        print('⚠️ Firestore save failed: $e');
+      final doc = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .get();
+
+      if (!doc.exists) {
+        final UserModel newUser = UserModel(
+          uid: user.uid,
+          username: firstName, // first name from Google
+          email: user.email ?? '',
+          photoUrl: user.photoURL ?? '',
+          createdAt: DateTime.now(),
+        );
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .set(newUser.toMap());
+        return newUser;
       }
 
-      return userModel;
-
+      return UserModel.fromMap(doc.data()!);
     } catch (e) {
-      print('Google Sign-In error: $e');
       throw 'Google Sign-In failed. Please try again.';
     }
   }
 
-  // ─── Guest Mode ───────────────────────────────────────────────
+  // ── Guest Sign-In ──────────────────────────────────────────────
   Future<UserModel?> signInAsGuest() async {
     try {
-      final UserCredential result = await _auth.signInAnonymously();
+      final UserCredential result =
+          await _auth.signInAnonymously();
       final User? user = result.user;
       if (user == null) return null;
 
+      // Guest name = Player_ + last 5 chars of UID
+      final guestName =
+          'Player_${user.uid.substring(user.uid.length - 5).toUpperCase()}';
+
       final UserModel guestUser = UserModel(
         uid: user.uid,
-        username: 'Guest_${user.uid.substring(0, 5)}',
+        username: guestName,
         email: '',
         createdAt: DateTime.now(),
       );
-
-      // Try Firestore save but don't block
-      try {
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .set(guestUser.toMap());
-        print('✅ Guest saved to Firestore');
-      } catch (e) {
-        print('⚠️ Firestore save failed: $e');
-      }
-
+      await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .set(guestUser.toMap());
       return guestUser;
-
     } catch (e) {
-      print('Guest error: $e');
       throw 'Guest sign-in failed. Please try again.';
     }
   }
 
-  // ─── Forgot Password ─────────────────────────────────────────
+  // ── Forgot Password ────────────────────────────────────────────
   Future<void> sendPasswordReset(String email) async {
     try {
       await _auth.sendPasswordResetEmail(email: email);
@@ -191,20 +151,31 @@ class AuthService {
     }
   }
 
-  // ─── Sign Out ─────────────────────────────────────────────────
+  // ── Sign Out ───────────────────────────────────────────────────
   Future<void> signOut() async {
     await _googleSignIn.signOut();
     await _auth.signOut();
   }
 
-  // ─── Get User from Firestore ──────────────────────────────────
+  // ── Get User from Firestore ────────────────────────────────────
   Future<UserModel?> _getUserFromFirestore(String uid) async {
-    final doc = await _firestore.collection('users').doc(uid).get();
+    final doc =
+        await _firestore.collection('users').doc(uid).get();
     if (doc.exists) return UserModel.fromMap(doc.data()!);
     return null;
   }
 
-  // ─── Handle Auth Errors ───────────────────────────────────────
+  // ── Stream User from Firestore (real-time) ─────────────────────
+  Stream<UserModel?> streamUser(String uid) {
+    return _firestore
+        .collection('users')
+        .doc(uid)
+        .snapshots()
+        .map((doc) =>
+            doc.exists ? UserModel.fromMap(doc.data()!) : null);
+  }
+
+  // ── Error Handler ──────────────────────────────────────────────
   String _handleAuthError(String code) {
     switch (code) {
       case 'email-already-in-use':
@@ -219,8 +190,6 @@ class AuthService {
         return 'Incorrect password. Please try again.';
       case 'too-many-requests':
         return 'Too many attempts. Please try later.';
-      case 'invalid-credential':
-        return 'Invalid email or password.';
       default:
         return 'Authentication failed. Please try again.';
     }

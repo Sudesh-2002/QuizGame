@@ -23,9 +23,15 @@ class MultiplayerService {
     final code = _generateCode();
     final ref = _db.collection('rooms').doc();
 
-    // Get questions for this game
-    final questions =
-        getQuestionsForCategory(categoryId, questionCount, difficulty);
+    // Store question IDs using seeded shuffle with roomId as seed
+    // Both host and guest will call getQuestionsForRoom(roomId)
+    // and get identical question lists
+    final questions = getQuestionsForRoom(
+      categoryId,
+      questionCount,
+      difficulty,
+      ref.id, // roomId is the seed
+    );
     final questionIds = questions.map((q) => q.id).toList();
 
     final room = RoomModel(

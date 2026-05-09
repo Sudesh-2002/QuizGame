@@ -31,7 +31,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
   bool _answered = false;
   bool _navigating = false;
   int? _myAnswer;
-  List<QuestionModel> _questions = [];
+  late List<QuestionModel> _questions;
+  int _lastQuestionIndex = -1;
 
   @override
   void initState() {
@@ -43,19 +44,19 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
     _slideAnim = Tween<Offset>(
       begin: const Offset(1, 0),
       end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOut),
-    );
+    ).animate(CurvedAnimation(
+        parent: _slideController, curve: Curves.easeOut));
     _slideController.forward();
 
-    // Load questions from sample data
-    _questions = getQuestionsForCategory(
+    // SEEDED shuffle — both players get same questions
+    _questions = getQuestionsForRoom(
       widget.room.categoryId,
       widget.room.questionCount,
       widget.room.difficulty,
+      widget.room.roomId,
     );
 
-    _startTimer();
+    _startTimer(widget.room.difficulty);
   }
 
   @override
@@ -66,13 +67,17 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
     super.dispose();
   }
 
-  void _startTimer() {
-    _seconds = widget.room.difficulty == 'Easy'
-        ? 30
-        : widget.room.difficulty == 'Hard'
-            ? 15
-            : 20;
+  int _timerSeconds(String difficulty) {
+    switch (difficulty) {
+      case 'Easy': return 30;
+      case 'Hard': return 15;
+      default: return 20;
+    }
+  }
+
+  void _startTimer(String difficulty) {
     _timer?.cancel();
+    _seconds = _timerSeconds(difficulty);
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
       if (_seconds <= 1) {
@@ -90,23 +95,21 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
       _answered = true;
       _myAnswer = -1;
     });
-    _scheduleAdvance();
+    _submitAndMaybeAdvance(null, false);
   }
 
   Future<void> _onAnswer(
       RoomModel room, QuestionModel question, int index) async {
     if (_answered) return;
 
-    final user = ref.read(userModelProvider);
     final isCorrect = index == question.correctIndex;
-
     setState(() {
       _answered = true;
       _myAnswer = index;
     });
-
     _timer?.cancel();
 
+    final user = ref.read(userModelProvider);
     await MultiplayerService().submitAnswer(
       roomId: room.roomId,
       uid: user?.uid ?? '',
@@ -115,50 +118,67 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
       difficulty: room.difficulty,
     );
 
-    _scheduleAdvance();
+    // After answering, check if opponent also answered
+    _submitAndMaybeAdvance(room, true);
   }
 
-  // Advance after both answer or time up (host controls)
-  void _scheduleAdvance() {
-    _advanceTimer = Timer(const Duration(seconds: 2), () async {
+  // Host advances question when BOTH answered or after 3s timeout
+  void _submitAndMaybeAdvance(RoomModel? room, bool waitForOpponent) {
+    _advanceTimer?.cancel();
+
+    // Delay to give opponent time to answer
+    // Host checks if both answered and then advances
+    final delay = waitForOpponent
+        ? const Duration(seconds: 3)
+        : const Duration(seconds: 2);
+
+    _advanceTimer = Timer(delay, () async {
       final user = ref.read(userModelProvider);
       if (user?.uid != widget.room.hostUid) return;
 
-      final questions = _questions;
-      final nextIndex = widget.room.currentQuestionIndex + 1;
+      final currentRoom = ref
+          .read(roomStreamProvider(widget.room.roomId))
+          .value;
+      if (currentRoom == null) return;
 
+      final nextIndex = currentRoom.currentQuestionIndex + 1;
       await MultiplayerService().advanceQuestion(
         widget.room.roomId,
         nextIndex,
-        questions.length,
+        _questions.length,
       );
     });
   }
 
-  void _handleRoomUpdate(RoomModel? room) {
-    if (room == null) return;
-
+  void _handleRoomUpdate(RoomModel room, String myUid) {
+    // Navigate to result when finished
     if (room.isFinished && !_navigating) {
       _navigating = true;
       _timer?.cancel();
+      _advanceTimer?.cancel();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => BattleResultScreen(room: room),
-          ),
-        );
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (_) => BattleResultScreen(room: room),
+            ),
+          );
+        }
       });
       return;
     }
 
-    // New question arrived
-    if (room.currentQuestionIndex != widget.room.currentQuestionIndex) {
+    // New question from Firestore
+    final newIndex = room.currentQuestionIndex;
+    if (newIndex != _lastQuestionIndex &&
+        newIndex < _questions.length) {
+      _lastQuestionIndex = newIndex;
       setState(() {
         _answered = false;
         _myAnswer = null;
       });
-      _startTimer();
+      _startTimer(room.difficulty);
       _slideController
         ..reset()
         ..forward();
@@ -172,59 +192,63 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
         ref.watch(roomStreamProvider(widget.room.roomId));
 
     return roomStream.when(
-      loading: () => _buildScaffold(
-          const Center(child: CircularProgressIndicator(
-              color: AppColors.primary))),
-      error: (e, _) => _buildScaffold(
-          Center(child: Text('Error: $e'))),
+      loading: () => _scaffold(const Center(
+          child:
+              CircularProgressIndicator(color: AppColors.primary))),
+      error: (e, _) =>
+          _scaffold(Center(child: Text('Error: $e'))),
       data: (room) {
-        if (room == null) return _buildScaffold(const SizedBox());
+        if (room == null) return _scaffold(const SizedBox());
 
-        _handleRoomUpdate(room);
+        final myUid = user?.uid ?? '';
+        _handleRoomUpdate(room, myUid);
 
         final qIndex = room.currentQuestionIndex;
         if (qIndex >= _questions.length) {
-          return _buildScaffold(const Center(
-            child: CircularProgressIndicator(color: AppColors.primary),
+          return _scaffold(const Center(
+            child: CircularProgressIndicator(
+                color: AppColors.primary),
           ));
         }
 
         final question = _questions[qIndex];
-        final myUid = user?.uid ?? '';
-        final opponentUid =
-            myUid == room.hostUid ? room.guestUid : room.hostUid;
+        final opponentUid = myUid == room.hostUid
+            ? room.guestUid ?? ''
+            : room.hostUid;
         final opponentName = myUid == room.hostUid
             ? room.guestUsername ?? 'Opponent'
             : room.hostUsername;
+
         final myScore = room.scores[myUid] ?? 0;
         final opponentScore = room.scores[opponentUid] ?? 0;
         final opponentAnswered =
             room.currentAnswers.containsKey(opponentUid);
         final labels = ['A', 'B', 'C', 'D'];
+        final maxSec = _timerSeconds(room.difficulty);
+
+        final timerColor = _seconds > maxSec * 0.6
+            ? AppColors.success
+            : _seconds > maxSec * 0.3
+                ? AppColors.warning
+                : AppColors.error;
 
         return WillPopScope(
           onWillPop: () async => false,
-          child: _buildScaffold(
+          child: _scaffold(
             Column(
               children: [
-                // ── Score Header ─────────────────────────────────
+                // ── Score header ─────────────────────────────
                 Container(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-                  decoration: BoxDecoration(
-                    color: AppColors.cardBg,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
+                  padding:
+                      const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                  color: AppColors.cardBg,
                   child: Row(
                     children: [
                       // My score
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.start,
                           children: [
                             Text(
                               user?.username ?? 'You',
@@ -248,10 +272,34 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                         ),
                       ),
 
-                      // Timer + Progress
+                      // Timer
                       Column(
                         children: [
-                          _timerCircle(),
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 56,
+                                height: 56,
+                                child: CircularProgressIndicator(
+                                  value: _seconds / maxSec,
+                                  strokeWidth: 4,
+                                  backgroundColor: AppColors.cardBg,
+                                  valueColor:
+                                      AlwaysStoppedAnimation<Color>(
+                                          timerColor),
+                                ),
+                              ),
+                              Text(
+                                '$_seconds',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: timerColor,
+                                ),
+                              ),
+                            ],
+                          ),
                           const SizedBox(height: 4),
                           Text(
                             '${qIndex + 1}/${_questions.length}',
@@ -266,7 +314,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                       // Opponent score
                       Expanded(
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
+                          crossAxisAlignment:
+                              CrossAxisAlignment.end,
                           children: [
                             Text(
                               opponentName,
@@ -302,7 +351,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                   minHeight: 4,
                 ),
 
-                // ── Question & Options ───────────────────────────
+                // ── Question & Options ───────────────────────
                 Expanded(
                   child: SlideTransition(
                     position: _slideAnim,
@@ -310,20 +359,25 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                       padding: const EdgeInsets.all(20),
                       child: Column(
                         children: [
-                          // Opponent status indicator
+                          // Opponent status
                           AnimatedContainer(
-                            duration: const Duration(milliseconds: 300),
-                            margin: const EdgeInsets.only(bottom: 12),
+                            duration:
+                                const Duration(milliseconds: 300),
+                            margin:
+                                const EdgeInsets.only(bottom: 12),
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
                               color: opponentAnswered
-                                  ? AppColors.success.withOpacity(0.1)
+                                  ? AppColors.success
+                                      .withOpacity(0.1)
                                   : AppColors.cardBg,
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius:
+                                  BorderRadius.circular(12),
                               border: Border.all(
                                 color: opponentAnswered
-                                    ? AppColors.success.withOpacity(0.4)
+                                    ? AppColors.success
+                                        .withOpacity(0.4)
                                     : AppColors.inputBg,
                               ),
                             ),
@@ -333,8 +387,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                               children: [
                                 Text(
                                   opponentAnswered ? '✅' : '⏳',
-                                  style:
-                                      const TextStyle(fontSize: 16),
+                                  style: const TextStyle(
+                                      fontSize: 16),
                                 ),
                                 const SizedBox(width: 8),
                                 Text(
@@ -365,7 +419,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                                 begin: Alignment.topLeft,
                                 end: Alignment.bottomRight,
                               ),
-                              borderRadius: BorderRadius.circular(24),
+                              borderRadius:
+                                  BorderRadius.circular(24),
                               boxShadow: [
                                 BoxShadow(
                                   color: AppColors.primary
@@ -402,31 +457,30 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                           const SizedBox(height: 20),
 
                           // Options
-                          ...question.options.asMap().entries.map(
-                            (entry) {
-                              final i = entry.key;
-                              final text = entry.value;
-                              final isSelected = _myAnswer == i;
-                              final isCorrect =
-                                  _answered &&
-                                      i == question.correctIndex;
-                              final isWrong = _answered &&
-                                  isSelected &&
-                                  i != question.correctIndex;
+                          ...question.options
+                              .asMap()
+                              .entries
+                              .map((entry) {
+                            final i = entry.key;
+                            final text = entry.value;
+                            final isSelected = _myAnswer == i;
+                            final isCorrect = _answered &&
+                                i == question.correctIndex;
+                            final isWrong = _answered &&
+                                isSelected &&
+                                i != question.correctIndex;
 
-                              return OptionButton(
-                                text: text,
-                                label: labels[i],
-                                isDisabled: _answered,
-                                isSelected:
-                                    isSelected && !_answered,
-                                isCorrect: isCorrect,
-                                isWrong: isWrong,
-                                onTap: () => _onAnswer(
-                                    room, question, i),
-                              );
-                            },
-                          ),
+                            return OptionButton(
+                              text: text,
+                              label: labels[i],
+                              isDisabled: _answered,
+                              isSelected: isSelected && !_answered,
+                              isCorrect: isCorrect,
+                              isWrong: isWrong,
+                              onTap: () =>
+                                  _onAnswer(room, question, i),
+                            );
+                          }),
 
                           if (_answered) ...[
                             const SizedBox(height: 12),
@@ -441,22 +495,29 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                                 mainAxisAlignment:
                                     MainAxisAlignment.center,
                                 children: [
-                                  const CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: AppColors.primary,
+                                  const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.primary,
+                                    ),
                                   ),
                                   const SizedBox(width: 12),
                                   Text(
                                     'Waiting for next question...',
                                     style: GoogleFonts.poppins(
                                       fontSize: 13,
-                                      color: AppColors.textSecondary,
+                                      color:
+                                          AppColors.textSecondary,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
                           ],
+
+                          const SizedBox(height: 30),
                         ],
                       ),
                     ),
@@ -470,47 +531,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
     );
   }
 
-  Widget _timerCircle() {
-    final maxSecs = widget.room.difficulty == 'Easy'
-        ? 30
-        : widget.room.difficulty == 'Hard'
-            ? 15
-            : 20;
-    final color = _seconds > maxSecs * 0.6
-        ? AppColors.success
-        : _seconds > maxSecs * 0.3
-            ? AppColors.warning
-            : AppColors.error;
-
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        SizedBox(
-          width: 56,
-          height: 56,
-          child: CircularProgressIndicator(
-            value: _seconds / maxSecs,
-            strokeWidth: 4,
-            backgroundColor: AppColors.cardBg,
-            valueColor: AlwaysStoppedAnimation<Color>(color),
-          ),
-        ),
-        Text(
-          '$_seconds',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildScaffold(Widget body) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      body: SafeArea(child: body),
-    );
-  }
+  Widget _scaffold(Widget body) => Scaffold(
+        backgroundColor: AppColors.background,
+        body: SafeArea(child: body),
+      );
 }
