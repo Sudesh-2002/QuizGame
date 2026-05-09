@@ -12,6 +12,7 @@ import '../widgets/category_card.dart';
 import '../widgets/daily_challenge_banner.dart';
 import 'login_screen.dart';
 import 'quiz_setup_screen.dart';
+import 'leaderboard_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -60,7 +61,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         index: _selectedIndex,
         children: [
           _buildHomeTab(user, dailyDone),
-          _buildComingSoon('🏆', 'Leaderboard', 'Coming in Step 5!'),
+          const LeaderboardScreen(),
           _buildComingSoon('👥', 'Multiplayer', 'Coming in Step 6!'),
           _buildProfileTab(user),
         ],
@@ -245,7 +246,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
-                      childAspectRatio: 1.4,
+                      childAspectRatio: 1.2,
                       children: [
                         StatCard(
                           label: 'Games Played',
