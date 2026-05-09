@@ -1,3 +1,4 @@
+import 'dart:math';
 import '../models/question_model.dart';
 
 final Map<String, List<QuestionModel>> sampleQuestions = {
@@ -217,12 +218,36 @@ List<QuestionModel> getQuestionsForCategory(
   int count,
   String difficulty,
 ) {
-  final all = sampleQuestions[categoryId] ?? sampleQuestions['general']!;
+  final all =
+      sampleQuestions[categoryId] ?? sampleQuestions['general']!;
   final filtered = difficulty == 'All'
       ? all
       : all.where((q) => q.difficulty == difficulty).toList();
-
-  final list = filtered.isEmpty ? all : filtered;
+  final list = List<QuestionModel>.from(
+      filtered.isEmpty ? all : filtered);
   list.shuffle();
+  return list.take(count).toList();
+}
+
+// ── Get questions — seeded (SAME questions for both players) ──
+// Uses roomId as seed so both players always get identical questions
+List<QuestionModel> getQuestionsForRoom(
+  String categoryId,
+  int count,
+  String difficulty,
+  String roomId, // seed
+) {
+  final all =
+      sampleQuestions[categoryId] ?? sampleQuestions['general']!;
+  final filtered = difficulty == 'All'
+      ? all
+      : all.where((q) => q.difficulty == difficulty).toList();
+  final list = List<QuestionModel>.from(
+      filtered.isEmpty ? all : filtered);
+
+  // Seeded shuffle — same roomId always produces same order
+  final seed = roomId.codeUnits
+      .fold<int>(0, (prev, el) => prev + el);
+  list.shuffle(Random(seed));
   return list.take(count).toList();
 }

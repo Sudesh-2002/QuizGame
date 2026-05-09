@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants/colors.dart';
 import '../models/category_model.dart';
+import '../models/question_model.dart';
 import '../widgets/custom_button.dart';
 import '../data/sample_questions.dart';
+import '../services/question_service.dart';
 import 'quiz_screen.dart';
 
 class QuizSetupScreen extends StatefulWidget {
@@ -18,6 +20,55 @@ class QuizSetupScreen extends StatefulWidget {
 class _QuizSetupScreenState extends State<QuizSetupScreen> {
   String _difficulty = 'Medium';
   int _questionCount = 10;
+  bool _isLoading = false;
+
+  Future<void> _startQuiz() async {
+    setState(() => _isLoading = true);
+
+    // Try Firestore first
+    List<QuestionModel> questions =
+        await QuestionService().getQuestions(
+      category: widget.category.id,
+      difficulty: _difficulty,
+      count: _questionCount,
+    );
+
+    // Fallback to local if Firestore empty
+    if (questions.isEmpty) {
+      questions = getQuestionsForCategory(
+        widget.category.id,
+        _questionCount,
+        _difficulty,
+      );
+    }
+
+    setState(() => _isLoading = false);
+
+    if (questions.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No questions found for this selection.'),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => QuizScreen(
+            category: widget.category,
+            questions: questions,
+            difficulty: _difficulty,
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,11 +133,14 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                   const SizedBox(height: 8),
 
                   // ── Difficulty ─────────────────────────────────
-                  Text('Difficulty',
-                      style: GoogleFonts.poppins(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary)),
+                  Text(
+                    'Difficulty',
+                    style: GoogleFonts.poppins(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
 
                   const SizedBox(height: 14),
 
@@ -105,14 +159,17 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                               setState(() => _difficulty = diff),
                           child: Container(
                             margin: const EdgeInsets.only(right: 10),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 14),
                             decoration: BoxDecoration(
                               color: selected
                                   ? color.withOpacity(0.2)
                                   : AppColors.cardBg,
                               borderRadius: BorderRadius.circular(14),
                               border: Border.all(
-                                color: selected ? color : Colors.transparent,
+                                color: selected
+                                    ? color
+                                    : Colors.transparent,
                                 width: 2,
                               ),
                             ),
@@ -124,7 +181,8 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                                       : diff == 'Medium'
                                           ? '😤'
                                           : '🔥',
-                                  style: const TextStyle(fontSize: 24),
+                                  style:
+                                      const TextStyle(fontSize: 24),
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
@@ -153,16 +211,22 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Questions',
-                          style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary)),
-                      Text('$_questionCount',
-                          style: GoogleFonts.poppins(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              color: cat.color)),
+                      Text(
+                        'Questions',
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        '$_questionCount',
+                        style: GoogleFonts.poppins(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: cat.color,
+                        ),
+                      ),
                     ],
                   ),
 
@@ -181,10 +245,13 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: ['5', '10', '15', '20']
-                        .map((n) => Text(n,
-                            style: GoogleFonts.poppins(
+                        .map((n) => Text(
+                              n,
+                              style: GoogleFonts.poppins(
                                 fontSize: 12,
-                                color: AppColors.textHint)))
+                                color: AppColors.textHint,
+                              ),
+                            ))
                         .toList(),
                   ),
 
@@ -202,7 +269,8 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _summaryItem('📚', '$_questionCount', 'Questions'),
+                        _summaryItem(
+                            '📚', '$_questionCount', 'Questions'),
                         _divider(),
                         _summaryItem(
                           '⚡',
@@ -230,38 +298,34 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
                   const SizedBox(height: 32),
 
                   // ── Start Button ───────────────────────────────
-                  CustomButton(
-                    text: '🚀  Start Quiz',
-                    color: cat.color,
-                    onPressed: () {
-                      final questions = getQuestionsForCategory(
-                        widget.category.id,
-                        _questionCount,
-                        _difficulty,
-                      );
-
-                      if (questions.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('No questions available for this selection.'),
-                            backgroundColor: AppColors.error,
-                          ),
-                        );
-                        return;
-                      }
-
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => QuizScreen(
-                            category: widget.category,
-                            questions: questions,
-                            difficulty: _difficulty,
-                          ),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 55,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _startQuiz,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: cat.color,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                      );
-                    },
+                        elevation: 4,
+                        shadowColor: cat.color.withOpacity(0.4),
+                      ),
+                      child: _isLoading
+                          ? const CircularProgressIndicator(
+                              color: Colors.white)
+                          : Text(
+                              '🚀  Start Quiz',
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                    ),
                   ),
+
+                  const SizedBox(height: 30),
                 ],
               ),
             ),
@@ -276,14 +340,21 @@ class _QuizSetupScreenState extends State<QuizSetupScreen> {
       children: [
         Text(emoji, style: const TextStyle(fontSize: 22)),
         const SizedBox(height: 4),
-        Text(value,
-            style: GoogleFonts.poppins(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary)),
-        Text(label,
-            style: GoogleFonts.poppins(
-                fontSize: 11, color: AppColors.textSecondary)),
+        Text(
+          value,
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 11,
+            color: AppColors.textSecondary,
+          ),
+        ),
       ],
     );
   }

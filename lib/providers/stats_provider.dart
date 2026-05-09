@@ -3,29 +3,20 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
 import 'auth_provider.dart';
 
-final userStatsProvider = AsyncNotifierProvider<UserStatsNotifier, UserModel?>(() {
-  return UserStatsNotifier();
+// Real-time stats — streams directly from Firestore
+// Automatically updates whenever coins, score, level changes
+final userStatsStreamProvider =
+    StreamProvider.autoDispose<UserModel?>((ref) {
+  final user = ref.watch(userModelProvider);
+  if (user == null) return Stream.value(null);
+
+  return FirebaseFirestore.instance
+      .collection('users')
+      .doc(user.uid)
+      .snapshots()
+      .map((snap) =>
+          snap.exists ? UserModel.fromMap(snap.data()!) : null);
 });
 
-class UserStatsNotifier extends AsyncNotifier<UserModel?> {
-  @override
-  Future<UserModel?> build() async {
-    final user = ref.watch(userModelProvider);
-    if (user == null) return null;
-
-    try {
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-
-      if (doc.exists) return UserModel.fromMap(doc.data()!);
-    } catch (e) {
-      print('Stats fetch error: $e');
-    }
-    return null;
-  }
-}
-
-// Daily challenge completed provider
+// Daily challenge completed flag
 final dailyChallengeProvider = StateProvider<bool>((ref) => false);
