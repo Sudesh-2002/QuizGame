@@ -10,7 +10,9 @@ class QuizState {
   final bool isFinished;
   final bool fiftyFiftyUsed;
   final bool skipUsed;
-  final List<int> hiddenOptions; // for 50/50 lifeline
+  final bool askAudienceUsed;
+  final List<int> hiddenOptions;
+  final Map<int, int> audienceVotes; // option index → percentage
 
   QuizState({
     required this.questions,
@@ -21,7 +23,9 @@ class QuizState {
     this.isFinished = false,
     this.fiftyFiftyUsed = false,
     this.skipUsed = false,
+    this.askAudienceUsed = false,
     this.hiddenOptions = const [],
+    this.audienceVotes = const {},
   });
 
   QuestionModel get currentQuestion => questions[currentIndex];
@@ -42,7 +46,9 @@ class QuizState {
     bool? isFinished,
     bool? fiftyFiftyUsed,
     bool? skipUsed,
+    bool? askAudienceUsed,
     List<int>? hiddenOptions,
+    Map<int, int>? audienceVotes,
   }) {
     return QuizState(
       questions: questions,
@@ -53,7 +59,9 @@ class QuizState {
       isFinished: isFinished ?? this.isFinished,
       fiftyFiftyUsed: fiftyFiftyUsed ?? this.fiftyFiftyUsed,
       skipUsed: skipUsed ?? this.skipUsed,
+      askAudienceUsed: askAudienceUsed ?? this.askAudienceUsed,
       hiddenOptions: hiddenOptions ?? this.hiddenOptions,
+      audienceVotes: audienceVotes ?? this.audienceVotes,
     );
   }
 }
@@ -65,17 +73,13 @@ class QuizNotifier extends StateNotifier<QuizState> {
           selectedAnswers: List.filled(questions.length, null),
         ));
 
-  // Answer a question
   void answerQuestion(int optionIndex, String difficulty) {
     if (state.selectedAnswers[state.currentIndex] != null) return;
 
-    final isCorrect =
-        optionIndex == state.currentQuestion.correctIndex;
-
+    final isCorrect = optionIndex == state.currentQuestion.correctIndex;
     final coinsEarned = isCorrect
         ? (difficulty == 'Easy' ? 5 : difficulty == 'Medium' ? 10 : 20)
         : 0;
-
     final scoreEarned = isCorrect ? 100 : 0;
 
     final newAnswers = List<int?>.from(state.selectedAnswers);
@@ -85,10 +89,10 @@ class QuizNotifier extends StateNotifier<QuizState> {
       selectedAnswers: newAnswers,
       score: state.score + scoreEarned,
       coins: state.coins + coinsEarned,
+      audienceVotes: {}, // clear votes on answer
     );
   }
 
-  // Go to next question
   void nextQuestion() {
     if (state.isLastQuestion) {
       state = state.copyWith(isFinished: true);
@@ -97,54 +101,100 @@ class QuizNotifier extends StateNotifier<QuizState> {
     state = state.copyWith(
       currentIndex: state.currentIndex + 1,
       hiddenOptions: [],
+      audienceVotes: {},
     );
   }
 
-  // Skip question (lifeline)
   void skipQuestion() {
     if (state.skipUsed) return;
     final newAnswers = List<int?>.from(state.selectedAnswers);
-    newAnswers[state.currentIndex] = -1; // -1 = skipped
-
+    newAnswers[state.currentIndex] = -1;
     state = state.copyWith(
       skipUsed: true,
       selectedAnswers: newAnswers,
     );
-
     Future.delayed(const Duration(milliseconds: 300), nextQuestion);
   }
 
-  // 50/50 lifeline
   void useFiftyFifty() {
     if (state.fiftyFiftyUsed) return;
-
     final correctIndex = state.currentQuestion.correctIndex;
     final wrongOptions = [0, 1, 2, 3]
         .where((i) => i != correctIndex)
         .toList()
       ..shuffle();
-
-    // Hide 2 wrong options
     final toHide = wrongOptions.take(2).toList();
-
     state = state.copyWith(
       fiftyFiftyUsed: true,
       hiddenOptions: toHide,
     );
   }
 
-  // Time ran out
+  // ── Ask the Audience ─────────────────────────────────────────
+  void useAskAudience() {
+    if (state.askAudienceUsed) return;
+
+    final correctIndex = state.currentQuestion.correctIndex;
+    final hiddenOptions = state.hiddenOptions;
+
+    // Available options (not hidden by 50/50)
+    final available = [0, 1, 2, 3]
+        .where((i) => !hiddenOptions.contains(i))
+        .toList();
+
+    // Generate realistic voting percentages
+    // Correct answer always gets highest percentage (50-75%)
+    final votes = <int, int>{};
+    int remaining = 100;
+
+    // Correct answer gets 50-75%
+    final correctVote = 50 + (DateTime.now().millisecond % 26);
+    votes[correctIndex] = correctVote;
+    remaining -= correctVote;
+
+    // Distribute remaining among wrong options
+    final wrongOptions =
+        available.where((i) => i != correctIndex).toList()..shuffle();
+
+    for (int i = 0; i < wrongOptions.length; i++) {
+      if (i == wrongOptions.length - 1) {
+        votes[wrongOptions[i]] = remaining;
+      } else {
+        final share = remaining ~/ (wrongOptions.length - i);
+        final variation = (DateTime.now().microsecond % 5) - 2;
+        final vote = (share + variation).clamp(1, remaining - (wrongOptions.length - i - 1));
+        votes[wrongOptions[i]] = vote;
+        remaining -= vote;
+      }
+    }
+
+    // Fill hidden options with 0
+    for (int i = 0; i < 4; i++) {
+      if (!votes.containsKey(i)) votes[i] = 0;
+    }
+
+    state = state.copyWith(
+      askAudienceUsed: true,
+      audienceVotes: votes,
+    );
+  }
+
+  // Reset lifeline (after watching ad)
+  void resetFiftyFifty() =>
+      state = state.copyWith(fiftyFiftyUsed: false);
+  void resetSkip() =>
+      state = state.copyWith(skipUsed: false);
+  void resetAskAudience() =>
+      state = state.copyWith(askAudienceUsed: false);
+
   void timeUp() {
     if (state.selectedAnswers[state.currentIndex] != null) return;
     final newAnswers = List<int?>.from(state.selectedAnswers);
-    newAnswers[state.currentIndex] = -2; // -2 = time up
+    newAnswers[state.currentIndex] = -2;
     state = state.copyWith(selectedAnswers: newAnswers);
   }
 
-  // Finish quiz manually
-  void finishQuiz() {
-    state = state.copyWith(isFinished: true);
-  }
+  void finishQuiz() => state = state.copyWith(isFinished: true);
 }
 
 final quizProvider =

@@ -17,10 +17,11 @@ import 'leaderboard_screen.dart';
 import 'multiplayer_lobby_screen.dart';
 import '../main.dart';
 import '../providers/category_provider.dart';
-
+import '../widgets/banner_ad_widget.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final int initialIndex;
+  const HomeScreen({super.key, this.initialIndex = 0});
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -35,6 +36,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex; // ADD THIS LINE
   }
 
   List<CategoryModel> get _filteredCategories {
@@ -67,13 +73,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: IndexedStack(
-        index: _selectedIndex,
+      body: Column(
         children: [
-          _buildHomeTab(statsAsync, dailyDone, countsAsync),
-          const LeaderboardScreen(),
-          const MultiplayerLobbyScreen(),
-          _buildProfileTab(statsAsync),
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _buildHomeTab(statsAsync, dailyDone, countsAsync),
+                const LeaderboardScreen(),
+                const MultiplayerLobbyScreen(),
+                _buildProfileTab(statsAsync),
+              ],
+            ),
+          ),
+          const BannerAdWidget(),
         ],
       ),
       bottomNavigationBar: Container(

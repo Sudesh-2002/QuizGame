@@ -7,7 +7,7 @@ import '../providers/quiz_provider.dart';
 import '../providers/stats_provider.dart';
 import 'home_screen.dart';
 import '../providers/leaderboard_provider.dart';
-
+import '../services/ad_service.dart';
 
 class ResultScreen extends ConsumerWidget {
   final CategoryModel category;
@@ -62,6 +62,9 @@ class ResultScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AdService().showInterstitialAd();
+    });
     final accuracy =
         (state.correctCount / state.totalQuestions * 100).round();
 

@@ -6,7 +6,9 @@ import '../models/category_model.dart';
 import '../models/question_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/quiz_provider.dart';
+import '../services/ad_service.dart';
 import '../services/quiz_service.dart';
+import '../widgets/audience_votes_widget.dart';
 import '../widgets/option_button.dart';
 import '../widgets/quiz_timer.dart';
 import 'result_screen.dart';
@@ -31,7 +33,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
-  int _timerKey = 0; // Forces QuizTimer rebuild on question change
+  int _timerKey = 0;
   bool _showExplanation = false;
 
   int get _timerSeconds {
@@ -99,7 +101,6 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
         total: state.totalQuestions,
       );
     }
-
     if (mounted) {
       Navigator.pushReplacement(
         context,
@@ -114,7 +115,73 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
     }
   }
 
-  // Quit confirmation dialog
+  // ── Show ad to restore lifeline ──────────────────────────────
+  void _watchAdForLifeline(
+    String lifelineName,
+    VoidCallback onRestored,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          '📺 Watch Ad?',
+          style: GoogleFonts.poppins(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Watch a short ad to restore your $lifelineName lifeline!',
+          style:
+              GoogleFonts.poppins(color: AppColors.textSecondary),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style:
+                    GoogleFonts.poppins(color: AppColors.textSecondary)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (!AdService().isRewardedReady) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Ad not ready yet, try again shortly!'),
+                    backgroundColor: AppColors.warning,
+                  ),
+                );
+                return;
+              }
+              AdService().showRewardedAd(
+                onRewarded: () {
+                  onRestored();
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            '✅ $lifelineName lifeline restored!'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  }
+                },
+              );
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary),
+            child: Text('Watch Ad 📺',
+                style: GoogleFonts.poppins(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<bool> _confirmQuit() async {
     return await showDialog<bool>(
           context: context,
@@ -128,20 +195,23 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                     fontWeight: FontWeight.bold)),
             content: Text(
               'Your progress will be lost. Are you sure?',
-              style: GoogleFonts.poppins(color: AppColors.textSecondary),
+              style:
+                  GoogleFonts.poppins(color: AppColors.textSecondary),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: Text('Continue',
-                    style: GoogleFonts.poppins(color: AppColors.primary)),
+                    style:
+                        GoogleFonts.poppins(color: AppColors.primary)),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.pop(ctx, true),
                 style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.error),
                 child: Text('Quit',
-                    style: GoogleFonts.poppins(color: Colors.white)),
+                    style:
+                        GoogleFonts.poppins(color: Colors.white)),
               ),
             ],
           ),
@@ -166,19 +236,23 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
     final isAnswered = selectedAnswer != null;
     final labels = ['A', 'B', 'C', 'D'];
 
-    return WillPopScope(
-      onWillPop: _confirmQuit,
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) return;
+        final quit = await _confirmQuit();
+        if (quit && mounted) Navigator.pop(context);
+      },
       child: Scaffold(
         backgroundColor: AppColors.background,
         body: SafeArea(
           child: Column(
             children: [
-              // ── Top Bar ─────────────────────────────────────────
+              // ── Top Bar ───────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 child: Row(
                   children: [
-                    // Quit button
                     GestureDetector(
                       onTap: () async {
                         final quit = await _confirmQuit();
@@ -194,16 +268,14 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                             color: AppColors.textSecondary, size: 20),
                       ),
                     ),
-
                     const SizedBox(width: 14),
-
-                    // Progress bar
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            mainAxisAlignment:
+                                MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 '${state.currentIndex + 1}/${state.totalQuestions}',
@@ -236,10 +308,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                         ],
                       ),
                     ),
-
                     const SizedBox(width: 14),
-
-                    // Timer
                     QuizTimer(
                       key: ValueKey(_timerKey),
                       seconds: _timerSeconds,
@@ -255,7 +324,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
 
               const SizedBox(height: 8),
 
-              // ── Score & Coins ────────────────────────────────────
+              // ── Score & Coins ─────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Row(
@@ -263,19 +332,21 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                   children: [
                     _infoChip('⭐', '${state.score}', 'Score'),
                     _infoChip('🪙', '${state.coins}', 'Coins'),
-                    _infoChip('✅', '${state.correctCount}', 'Correct'),
+                    _infoChip(
+                        '✅', '${state.correctCount}', 'Correct'),
                   ],
                 ),
               ),
 
               const SizedBox(height: 16),
 
-              // ── Question Card ────────────────────────────────────
+              // ── Question & Options ────────────────────────────
               Expanded(
                 child: SlideTransition(
                   position: _slideAnimation,
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20),
                     child: Column(
                       children: [
                         // Question box
@@ -294,7 +365,8 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                             borderRadius: BorderRadius.circular(24),
                             boxShadow: [
                               BoxShadow(
-                                color: widget.category.color.withOpacity(0.35),
+                                color: widget.category.color
+                                    .withOpacity(0.35),
                                 blurRadius: 16,
                                 offset: const Offset(0, 8),
                               ),
@@ -302,10 +374,9 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                           ),
                           child: Column(
                             children: [
-                              Text(
-                                widget.category.emoji,
-                                style: const TextStyle(fontSize: 36),
-                              ),
+                              Text(widget.category.emoji,
+                                  style:
+                                      const TextStyle(fontSize: 36)),
                               const SizedBox(height: 12),
                               Text(
                                 'Question ${state.currentIndex + 1}',
@@ -329,11 +400,12 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                           ),
                         ),
 
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 20),
 
-                        // ── Lifelines ────────────────────────────
+                        // ── Lifelines ─────────────────────────────
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisAlignment:
+                              MainAxisAlignment.center,
                           children: [
                             // 50/50
                             _lifelineButton(
@@ -342,9 +414,34 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                               used: state.fiftyFiftyUsed,
                               onTap: isAnswered
                                   ? null
-                                  : () => quizNotifier.useFiftyFifty(),
+                                  : state.fiftyFiftyUsed
+                                      ? () => _watchAdForLifeline(
+                                            '50/50',
+                                            quizNotifier.resetFiftyFifty,
+                                          )
+                                      : quizNotifier.useFiftyFifty,
+                              needsAd: state.fiftyFiftyUsed,
                             ),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 8),
+
+                            // Ask the Audience
+                            _lifelineButton(
+                              label: 'Audience',
+                              emoji: '👥',
+                              used: state.askAudienceUsed,
+                              onTap: isAnswered
+                                  ? null
+                                  : state.askAudienceUsed
+                                      ? () => _watchAdForLifeline(
+                                            'Ask Audience',
+                                            quizNotifier
+                                                .resetAskAudience,
+                                          )
+                                      : quizNotifier.useAskAudience,
+                              needsAd: state.askAudienceUsed,
+                            ),
+                            const SizedBox(width: 8),
+
                             // Skip
                             _lifelineButton(
                               label: 'Skip',
@@ -352,39 +449,60 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                               used: state.skipUsed,
                               onTap: isAnswered
                                   ? null
-                                  : () => quizNotifier.skipQuestion(),
+                                  : state.skipUsed
+                                      ? () => _watchAdForLifeline(
+                                            'Skip',
+                                            quizNotifier.resetSkip,
+                                          )
+                                      : quizNotifier.skipQuestion,
+                              needsAd: state.skipUsed,
                             ),
                           ],
                         ),
 
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 16),
 
-                        // ── Options ──────────────────────────────
-                        ...question.options.asMap().entries.map((entry) {
-                          final i = entry.key;
-                          final text = entry.value;
-                          final isHidden =
-                              state.hiddenOptions.contains(i);
-                          final isSelected = selectedAnswer == i;
-                          final isCorrectOption =
-                              i == question.correctIndex;
+                        // ── Audience Votes ────────────────────────
+                        if (state.audienceVotes.isNotEmpty &&
+                            !isAnswered) ...[
+                          AudienceVotesWidget(
+                            votes: state.audienceVotes,
+                            options: question.options,
+                            hiddenOptions: state.hiddenOptions,
+                          ),
+                          const SizedBox(height: 16),
+                        ],
 
-                          return OptionButton(
-                            text: text,
-                            label: labels[i],
-                            isHidden: isHidden,
-                            isDisabled: isAnswered,
-                            isSelected: isSelected && !isAnswered,
-                            isCorrect: isAnswered && isCorrectOption,
-                            isWrong: isAnswered &&
-                                isSelected &&
-                                !isCorrectOption,
-                            onTap: () =>
-                                _onAnswer(quizNotifier, state, i),
-                          );
-                        }),
+                        // ── Options ───────────────────────────────
+                        ...question.options.asMap().entries.map(
+                          (entry) {
+                            final i = entry.key;
+                            final text = entry.value;
+                            final isHidden =
+                                state.hiddenOptions.contains(i);
+                            final isSelected = selectedAnswer == i;
+                            final isCorrectOption =
+                                i == question.correctIndex;
 
-                        // ── Explanation ──────────────────────────
+                            return OptionButton(
+                              text: text,
+                              label: labels[i],
+                              isHidden: isHidden,
+                              isDisabled: isAnswered,
+                              isSelected:
+                                  isSelected && !isAnswered,
+                              isCorrect:
+                                  isAnswered && isCorrectOption,
+                              isWrong: isAnswered &&
+                                  isSelected &&
+                                  !isCorrectOption,
+                              onTap: () => _onAnswer(
+                                  quizNotifier, state, i),
+                            );
+                          },
+                        ),
+
+                        // ── Explanation ───────────────────────────
                         if (_showExplanation &&
                             isAnswered &&
                             question.explanation != null) ...[
@@ -393,22 +511,27 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                             padding: const EdgeInsets.all(16),
                             decoration: BoxDecoration(
                               color: AppColors.cardBg,
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius:
+                                  BorderRadius.circular(16),
                               border: Border.all(
-                                  color: AppColors.primary.withOpacity(0.3)),
+                                  color: AppColors.primary
+                                      .withOpacity(0.3)),
                             ),
                             child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 const Text('💡',
-                                    style: TextStyle(fontSize: 18)),
+                                    style:
+                                        TextStyle(fontSize: 18)),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
                                     question.explanation!,
                                     style: GoogleFonts.poppins(
                                       fontSize: 13,
-                                      color: AppColors.textSecondary,
+                                      color:
+                                          AppColors.textSecondary,
                                       height: 1.5,
                                     ),
                                   ),
@@ -420,7 +543,7 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
 
                         const SizedBox(height: 20),
 
-                        // ── Next Button ──────────────────────────
+                        // ── Next Button ───────────────────────────
                         if (isAnswered)
                           SizedBox(
                             width: double.infinity,
@@ -429,9 +552,11 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                               onPressed: () =>
                                   _onNext(quizNotifier, state),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: widget.category.color,
+                                backgroundColor:
+                                    widget.category.color,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                  borderRadius:
+                                      BorderRadius.circular(16),
                                 ),
                                 elevation: 4,
                                 shadowColor: widget.category.color
@@ -465,7 +590,8 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
 
   Widget _infoChip(String emoji, String value, String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding:
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(12),
@@ -484,7 +610,8 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
                       color: AppColors.textPrimary)),
               Text(label,
                   style: GoogleFonts.poppins(
-                      fontSize: 10, color: AppColors.textSecondary)),
+                      fontSize: 10,
+                      color: AppColors.textSecondary)),
             ],
           ),
         ],
@@ -496,37 +623,43 @@ class _QuizScreenState extends ConsumerState<QuizScreen>
     required String label,
     required String emoji,
     required bool used,
+    required bool needsAd,
     VoidCallback? onTap,
   }) {
     return GestureDetector(
-      onTap: used ? null : onTap,
+      onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(
+            horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: used ? AppColors.cardBg : AppColors.primary.withOpacity(0.15),
+          color: needsAd
+              ? const Color(0xFFFF9800).withOpacity(0.1)
+              : AppColors.primary.withOpacity(0.15),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: used ? AppColors.inputBg : AppColors.primary,
+            color: needsAd
+                ? const Color(0xFFFF9800)
+                : AppColors.primary,
             width: 1.5,
           ),
         ),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text(emoji,
-                style: TextStyle(
-                    fontSize: 18,
-                    color: used ? Colors.grey : null)),
-            const SizedBox(width: 6),
             Text(
-              label,
+              needsAd ? '📺' : emoji,
+              style: const TextStyle(fontSize: 18),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              needsAd ? 'Ad' : label,
               style: GoogleFonts.poppins(
-                fontSize: 13,
+                fontSize: 10,
                 fontWeight: FontWeight.w600,
-                color: used ? AppColors.textHint : AppColors.primary,
-                decoration:
-                    used ? TextDecoration.lineThrough : null,
+                color: needsAd
+                    ? const Color(0xFFFF9800)
+                    : AppColors.primary,
               ),
             ),
           ],

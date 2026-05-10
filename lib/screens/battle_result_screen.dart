@@ -6,6 +6,8 @@ import '../models/room_model.dart';
 import '../providers/auth_provider.dart';
 import 'home_screen.dart';
 import 'multiplayer_lobby_screen.dart';
+import '../main.dart';
+import 'home_screen.dart';
 
 class BattleResultScreen extends ConsumerWidget {
   final RoomModel room;
@@ -261,13 +263,14 @@ class BattleResultScreen extends ConsumerWidget {
                 width: double.infinity,
                 height: 55,
                 child: ElevatedButton(
-                  onPressed: () => Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const MultiplayerLobbyScreen(),
-                    ),
-                  ),
+                  onPressed: () {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (_) => const HomeScreen(initialIndex: 2),
+                      ),
+                      (route) => false,
+                    );
+                  },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     shape: RoundedRectangleBorder(
@@ -291,12 +294,14 @@ class BattleResultScreen extends ConsumerWidget {
                 width: double.infinity,
                 height: 52,
                 child: OutlinedButton(
-                  onPressed: () => Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const HomeScreen()),
-                    (r) => false,
-                  ),
+                  onPressed: () {
+                    Navigator.of(context).pushAndRemoveUntil(
+                      MaterialPageRoute(
+                        builder: (_) => const HomeScreen(initialIndex: 0),
+                      ),
+                      (route) => false,
+                    );
+                  },
                   style: OutlinedButton.styleFrom(
                     side: const BorderSide(color: AppColors.primary),
                     shape: RoundedRectangleBorder(

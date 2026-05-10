@@ -8,6 +8,8 @@ import '../providers/auth_provider.dart';
 import '../providers/multiplayer_provider.dart';
 import '../services/multiplayer_service.dart';
 import 'battle_screen.dart';
+import '../main.dart'; // for AuthGate
+import 'home_screen.dart';
 
 class BattleWaitingScreen extends ConsumerStatefulWidget {
   final RoomModel room;
@@ -44,6 +46,22 @@ class _BattleWaitingScreenState
     super.dispose();
   }
 
+  // ── Always navigate to Home cleanly ───────────────────────────
+  void _goToMultiplayer() {
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(
+        builder: (_) => const HomeScreen(initialIndex: 2),
+      ),
+      (route) => false,
+    );
+  }
+
+  Future<void> _leaveRoom(RoomModel room, String uid, bool isHost) async {
+    await MultiplayerService().leaveRoom(room.roomId, uid, isHost);
+    _goToMultiplayer();
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(userModelProvider);
@@ -54,42 +72,44 @@ class _BattleWaitingScreenState
       loading: () => _buildScaffold(_buildLoader()),
       error: (e, _) => _buildScaffold(_buildError()),
       data: (room) {
+        // Room was deleted (host left) — go home
         if (room == null) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) Navigator.pop(context);
+            if (mounted && !_navigating) {
+              _navigating = true;
+              _goToMultiplayer();
+            }
           });
           return _buildScaffold(_buildLoader());
         }
 
-        // Auto-start when both ready
+        // Game started — navigate to battle
         if (room.isPlaying && !_navigating) {
           _navigating = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BattleScreen(room: room),
-              ),
-            );
+            if (mounted) {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => BattleScreen(room: room),
+                ),
+              );
+            }
           });
         }
 
         final isHost = user?.uid == room.hostUid;
         final bothJoined = room.isFull;
         final myReady = room.ready[user?.uid] ?? false;
-        final bothReady = room.ready.values
-            .where((v) => v)
-            .length ==
-            2;
+        final bothReady =
+            room.ready.values.where((v) => v).length == 2;
 
-        return WillPopScope(
-          onWillPop: () async {
-            await MultiplayerService().leaveRoom(
-              room.roomId,
-              user?.uid ?? '',
-              isHost,
-            );
-            return true;
+        return PopScope(
+          canPop: false,
+          onPopInvoked: (didPop) async {
+            if (didPop) return;
+            await _leaveRoom(
+                room, user?.uid ?? '', isHost);
           },
           child: _buildScaffold(
             SingleChildScrollView(
@@ -128,7 +148,8 @@ class _BattleWaitingScreenState
                         color: AppColors.cardBg,
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                            color: AppColors.primary.withOpacity(0.4)),
+                            color:
+                                AppColors.primary.withOpacity(0.4)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
@@ -163,12 +184,13 @@ class _BattleWaitingScreenState
                   Row(
                     children: [
                       Expanded(
-                          child: _playerCard(
-                        room.hostUsername,
-                        '👑 Host',
-                        room.ready[room.hostUid] ?? false,
-                        AppColors.primary,
-                      )),
+                        child: _playerCard(
+                          room.hostUsername,
+                          '👑 Host',
+                          room.ready[room.hostUid] ?? false,
+                          AppColors.primary,
+                        ),
+                      ),
                       Column(
                         children: [
                           const Text('⚔️',
@@ -206,19 +228,22 @@ class _BattleWaitingScreenState
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      mainAxisAlignment:
+                          MainAxisAlignment.spaceAround,
                       children: [
                         _infoItem('📚',
                             '${room.questionCount}', 'Questions'),
-                        _infoItem('⚡', room.difficulty, 'Difficulty'),
-                        _infoItem('🎯', room.categoryId, 'Category'),
+                        _infoItem(
+                            '⚡', room.difficulty, 'Difficulty'),
+                        _infoItem(
+                            '🎯', room.categoryId, 'Category'),
                       ],
                     ),
                   ),
 
                   const SizedBox(height: 28),
 
-                  // Ready button
+                  // Ready / Start buttons
                   if (bothJoined) ...[
                     SizedBox(
                       width: double.infinity,
@@ -252,7 +277,6 @@ class _BattleWaitingScreenState
 
                     const SizedBox(height: 12),
 
-                    // Host starts game when both ready
                     if (isHost && bothReady)
                       SizedBox(
                         width: double.infinity,
@@ -263,9 +287,11 @@ class _BattleWaitingScreenState
                                 .startGame(room.roomId);
                           },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFFFFD700),
+                            backgroundColor:
+                                const Color(0xFFFFD700),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius:
+                                  BorderRadius.circular(16),
                             ),
                           ),
                           child: Text(
@@ -289,16 +315,17 @@ class _BattleWaitingScreenState
                         textAlign: TextAlign.center,
                       ),
                   ] else
-                    // Pulse animation while waiting
                     ScaleTransition(
                       scale: _pulseAnimation,
                       child: Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.1),
+                          color:
+                              AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
-                              color: AppColors.primary.withOpacity(0.4)),
+                              color: AppColors.primary
+                                  .withOpacity(0.4)),
                         ),
                         child: Row(
                           mainAxisAlignment:
@@ -325,20 +352,20 @@ class _BattleWaitingScreenState
                   const SizedBox(height: 24),
 
                   // Leave button
-                  TextButton(
-                    onPressed: () async {
-                      await MultiplayerService().leaveRoom(
-                        room.roomId,
+                  SizedBox(
+                    width: double.infinity,
+                    child: TextButton(
+                      onPressed: () => _leaveRoom(
+                        room,
                         user?.uid ?? '',
                         isHost,
-                      );
-                      if (mounted) Navigator.pop(context);
-                    },
-                    child: Text(
-                      'Leave Room',
-                      style: GoogleFonts.poppins(
-                        color: AppColors.error,
-                        fontSize: 14,
+                      ),
+                      child: Text(
+                        'Leave Room',
+                        style: GoogleFonts.poppins(
+                          color: AppColors.error,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                   ),
@@ -402,8 +429,8 @@ class _BattleWaitingScreenState
           ),
           const SizedBox(height: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: ready
                   ? AppColors.success.withOpacity(0.2)
@@ -433,8 +460,8 @@ class _BattleWaitingScreenState
       decoration: BoxDecoration(
         color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.textHint.withOpacity(0.3),
-            style: BorderStyle.solid),
+        border: Border.all(
+            color: AppColors.textHint.withOpacity(0.3)),
       ),
       child: Column(
         children: [
@@ -445,20 +472,12 @@ class _BattleWaitingScreenState
                 color: AppColors.textHint, size: 26),
           ),
           const SizedBox(height: 8),
-          Text(
-            'Waiting...',
-            style: GoogleFonts.poppins(
-              fontSize: 13,
-              color: AppColors.textHint,
-            ),
-          ),
-          Text(
-            'Share code',
-            style: GoogleFonts.poppins(
-              fontSize: 11,
-              color: AppColors.textHint,
-            ),
-          ),
+          Text('Waiting...',
+              style: GoogleFonts.poppins(
+                  fontSize: 13, color: AppColors.textHint)),
+          Text('Share code',
+              style: GoogleFonts.poppins(
+                  fontSize: 11, color: AppColors.textHint)),
         ],
       ),
     );
@@ -469,33 +488,26 @@ class _BattleWaitingScreenState
       children: [
         Text(emoji, style: const TextStyle(fontSize: 20)),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: GoogleFonts.poppins(
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        Text(
-          label,
-          style: GoogleFonts.poppins(
-            fontSize: 11,
-            color: AppColors.textSecondary,
-          ),
-        ),
+        Text(value,
+            style: GoogleFonts.poppins(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textPrimary)),
+        Text(label,
+            style: GoogleFonts.poppins(
+                fontSize: 11, color: AppColors.textSecondary)),
       ],
     );
   }
 
   Widget _buildLoader() => const Center(
-        child: CircularProgressIndicator(color: AppColors.primary),
+        child:
+            CircularProgressIndicator(color: AppColors.primary),
       );
 
   Widget _buildError() => Center(
-        child: Text(
-          'Connection lost',
-          style: GoogleFonts.poppins(color: AppColors.textSecondary),
-        ),
+        child: Text('Connection lost',
+            style: GoogleFonts.poppins(
+                color: AppColors.textSecondary)),
       );
 }
