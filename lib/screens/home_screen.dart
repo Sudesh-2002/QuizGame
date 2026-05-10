@@ -15,9 +15,13 @@ import 'login_screen.dart';
 import 'quiz_setup_screen.dart';
 import 'leaderboard_screen.dart';
 import 'multiplayer_lobby_screen.dart';
+import '../main.dart';
+import '../providers/category_provider.dart';
+import '../widgets/banner_ad_widget.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  final int initialIndex;
+  const HomeScreen({super.key, this.initialIndex = 0});
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -33,6 +37,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _searchController.dispose();
     super.dispose();
   }
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex; // ADD THIS LINE
+  }
 
   List<CategoryModel> get _filteredCategories {
     if (_searchQuery.isEmpty) return appCategories;
@@ -45,10 +54,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<void> _signOut() async {
     await ref.read(authServiceProvider).signOut();
+    // Clear local user state
+    ref.read(userModelProvider.notifier).state = null;
     if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const AuthGate()),
+        (route) => false,
       );
     }
   }
@@ -56,18 +67,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     // Use real-time stream instead of static provider
-    final statsAsync = ref.watch(userStatsStreamProvider);
+    final statsAsync = ref.watch(userStreamProvider);
     final dailyDone = ref.watch(dailyChallengeProvider);
+    final countsAsync = ref.watch(categoryCountsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: IndexedStack(
-        index: _selectedIndex,
+      body: Column(
         children: [
-          _buildHomeTab(statsAsync, dailyDone),
-          const LeaderboardScreen(),
-          const MultiplayerLobbyScreen(),
-          _buildProfileTab(statsAsync),
+          Expanded(
+            child: IndexedStack(
+              index: _selectedIndex,
+              children: [
+                _buildHomeTab(statsAsync, dailyDone, countsAsync),
+                const LeaderboardScreen(),
+                const MultiplayerLobbyScreen(),
+                _buildProfileTab(statsAsync),
+              ],
+            ),
+          ),
+          const BannerAdWidget(),
         ],
       ),
       bottomNavigationBar: Container(
@@ -127,7 +146,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   // ── Home Tab ─────────────────────────────────────────────────────
   Widget _buildHomeTab(
-      AsyncValue<UserModel?> statsAsync, bool dailyDone) {
+      AsyncValue<UserModel?> statsAsync, bool dailyDone,
+      AsyncValue<Map<String, int>> countsAsync,) {
     return CustomScrollView(
       slivers: [
         // ── App Bar ───────────────────────────────────────────────
@@ -375,13 +395,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     (context, index) {
                       final category =
                           _filteredCategories[index];
+                      final counts = countsAsync.value; // null while loading
                       return CategoryCard(
                         category: category,
+                        questionCount: counts?[category.id], // null shows shimmer
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => QuizSetupScreen(
-                                category: category),
+                            builder: (_) => QuizSetupScreen(category: category),
                           ),
                         ),
                       );

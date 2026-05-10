@@ -6,6 +6,7 @@ import '../providers/auth_provider.dart';
 import '../services/auth_service.dart';
 import 'register_screen.dart';
 import 'home_screen.dart';
+import '../main.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -92,9 +93,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _goToHome() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const HomeScreen()),
+    // Don't push HomeScreen directly.
+    // Restart the widget tree from AuthGate so all providers
+    // are initialized correctly on login.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthGate()),
+      (route) => false,
     );
   }
 

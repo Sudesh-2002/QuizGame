@@ -6,7 +6,7 @@ class CategoryModel {
   final String emoji;
   final Color color;
   final Color darkColor;
-  final int totalQuestions;
+  final int? totalQuestions; // nullable — loaded dynamically
   final int questionsPlayed;
 
   CategoryModel({
@@ -15,10 +15,12 @@ class CategoryModel {
     required this.emoji,
     required this.color,
     required this.darkColor,
-    this.totalQuestions = 0,
+    this.totalQuestions,  // no default
     this.questionsPlayed = 0,
   });
 
   double get progressPercent =>
-      totalQuestions == 0 ? 0 : questionsPlayed / totalQuestions;
+      (totalQuestions == null || totalQuestions == 0)
+          ? 0
+          : questionsPlayed / totalQuestions!;
 }

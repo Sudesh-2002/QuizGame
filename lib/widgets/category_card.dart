@@ -5,11 +5,13 @@ import '../models/category_model.dart';
 class CategoryCard extends StatelessWidget {
   final CategoryModel category;
   final VoidCallback onTap;
+  final int? questionCount; // passed from home screen
 
   const CategoryCard({
     super.key,
     required this.category,
     required this.onTap,
+    this.questionCount, // null shows loading shimmer
   });
 
   @override
@@ -34,7 +36,7 @@ class CategoryCard extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            // Background circle decoration
+            // Background circle decorations
             Positioned(
               right: -15,
               top: -15,
@@ -86,16 +88,18 @@ class CategoryCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
 
-                  // Questions count
-                  Text(
-                    '${category.totalQuestions} Questions',
-                    style: GoogleFonts.poppins(
-                      fontSize: 11,
-                      color: Colors.white70,
-                    ),
-                  ),
+                  // Question count — dynamic
+                  questionCount == null
+                      ? _loadingShimmer()
+                      : Text(
+                          '$questionCount Question${questionCount == 1 ? '' : 's'}',
+                          style: GoogleFonts.poppins(
+                            fontSize: 11,
+                            color: Colors.white70,
+                          ),
+                        ),
 
                   const SizedBox(height: 8),
 
@@ -106,7 +110,8 @@ class CategoryCard extends StatelessWidget {
                       value: category.progressPercent,
                       backgroundColor: Colors.white24,
                       valueColor:
-                          const AlwaysStoppedAnimation<Color>(Colors.white),
+                          const AlwaysStoppedAnimation<Color>(
+                              Colors.white),
                       minHeight: 4,
                     ),
                   ),
@@ -115,6 +120,18 @@ class CategoryCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // Shows a small pulsing placeholder while count loads
+  Widget _loadingShimmer() {
+    return Container(
+      height: 11,
+      width: 80,
+      decoration: BoxDecoration(
+        color: Colors.white24,
+        borderRadius: BorderRadius.circular(6),
       ),
     );
   }

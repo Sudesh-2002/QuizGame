@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import '../constants/colors.dart';
 import '../providers/auth_provider.dart';
 import 'home_screen.dart';
+import '../main.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
   const RegisterScreen({super.key});
@@ -37,9 +38,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
       if (user != null && mounted) {
         ref.read(userModelProvider.notifier).state = user;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => const HomeScreen()),
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const AuthGate()),
+          (route) => false,
         );
       }
     } catch (e) {

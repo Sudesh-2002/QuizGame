@@ -18,7 +18,8 @@ class LeaderboardScreen extends ConsumerStatefulWidget {
       _LeaderboardScreenState();
 }
 
-class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
+class _LeaderboardScreenState
+    extends ConsumerState<LeaderboardScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   String _selectedCategory = 'general';
@@ -42,73 +43,60 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
 
     return Scaffold(
       backgroundColor: AppColors.background,
-      body: NestedScrollView(
-        headerSliverBuilder: (context, innerBoxIsScrolled) => [
-          // ── App Bar ─────────────────────────────────────────────
-          SliverAppBar(
-            backgroundColor: AppColors.background,
-            pinned: true,
-            floating: true,
-            automaticallyImplyLeading: false,
-            expandedHeight: 60,
-            title: Text(
-              '🏆 Leaderboard',
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            actions: [
-              // Refresh button
-              IconButton(
-                onPressed: () {
-                  ref.invalidate(globalLeaderboardProvider);
-                  ref.invalidate(weeklyLeaderboardProvider);
-                },
-                icon: const Icon(Icons.refresh_rounded,
-                    color: AppColors.textSecondary),
-              ),
-            ],
-            bottom: PreferredSize(
-              preferredSize: const Size.fromHeight(48),
-              child: Container(
-                color: AppColors.background,
-                child: TabBar(
-                  controller: _tabController,
-                  labelColor: AppColors.primary,
-                  unselectedLabelColor: AppColors.textHint,
-                  labelStyle: GoogleFonts.poppins(
-                      fontSize: 13, fontWeight: FontWeight.w600),
-                  unselectedLabelStyle:
-                      GoogleFonts.poppins(fontSize: 13),
-                  indicatorColor: AppColors.primary,
-                  indicatorWeight: 3,
-                  indicatorSize: TabBarIndicatorSize.label,
-                  tabs: const [
-                    Tab(text: 'Global'),
-                    Tab(text: 'Weekly'),
-                    Tab(text: 'Category'),
-                  ],
-                ),
-              ),
-            ),
+
+      // ── Fixed App Bar — does NOT scroll away ──────────────────
+      appBar: AppBar(
+        backgroundColor: AppColors.background,
+        automaticallyImplyLeading: false,
+        elevation: 0,
+        titleSpacing: 20,
+        title: Text(
+          '🏆 Leaderboard',
+          style: GoogleFonts.poppins(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        actions: [
+          IconButton(
+            onPressed: () {
+              ref.invalidate(globalLeaderboardProvider);
+              ref.invalidate(weeklyLeaderboardProvider);
+            },
+            icon: const Icon(Icons.refresh_rounded,
+                color: AppColors.textSecondary),
           ),
         ],
 
-        body: TabBarView(
+        // Tab bar pinned inside AppBar — never scrolls
+        bottom: TabBar(
           controller: _tabController,
-          children: [
-            // ── Tab 1: Global ──────────────────────────────────────
-            _buildGlobalTab(user),
-
-            // ── Tab 2: Weekly ──────────────────────────────────────
-            _buildWeeklyTab(user),
-
-            // ── Tab 3: Category ────────────────────────────────────
-            _buildCategoryTab(user),
+          labelColor: AppColors.primary,
+          unselectedLabelColor: AppColors.textHint,
+          labelStyle: GoogleFonts.poppins(
+              fontSize: 13, fontWeight: FontWeight.w600),
+          unselectedLabelStyle:
+              GoogleFonts.poppins(fontSize: 13),
+          indicatorColor: AppColors.primary,
+          indicatorWeight: 3,
+          indicatorSize: TabBarIndicatorSize.label,
+          tabs: const [
+            Tab(text: 'Global'),
+            Tab(text: 'Weekly'),
+            Tab(text: 'Category'),
           ],
         ),
+      ),
+
+      // ── Body — TabBarView fills remaining space ────────────────
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildGlobalTab(user),
+          _buildWeeklyTab(user),
+          _buildCategoryTab(user),
+        ],
       ),
     );
   }
@@ -122,88 +110,52 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
 
     return leaderboardAsync.when(
       loading: () => _buildLoader(),
-      error: (e, _) => _buildError('Failed to load leaderboard', () {
-        ref.invalidate(globalLeaderboardProvider);
-      }),
+      error: (e, _) => _buildError('Failed to load leaderboard',
+          () => ref.invalidate(globalLeaderboardProvider)),
       data: (entries) {
         if (entries.isEmpty) return _buildEmpty();
         return RefreshIndicator(
           color: AppColors.primary,
           backgroundColor: AppColors.cardBg,
-          onRefresh: () async {
-            ref.invalidate(globalLeaderboardProvider);
-          },
-          child: CustomScrollView(
-            slivers: [
-              // Podium (top 3)
-              if (entries.length >= 3)
-                SliverToBoxAdapter(
-                  child: PodiumWidget(
-                    first: entries[0],
-                    second: entries.length > 1 ? entries[1] : null,
-                    third: entries.length > 2 ? entries[2] : null,
-                  ),
-                ),
+          onRefresh: () async =>
+              ref.invalidate(globalLeaderboardProvider),
+          child: ListView.builder(
+            padding: const EdgeInsets.only(bottom: 30),
+            itemCount: entries.length + 2, // +2 for podium & banner
+            itemBuilder: (context, index) {
+              // Podium
+              if (index == 0) {
+                return entries.length >= 3
+                    ? PodiumWidget(
+                        first: entries[0],
+                        second: entries[1],
+                        third: entries[2],
+                      )
+                    : const SizedBox();
+              }
 
               // My rank banner
-              if (user != null)
-                SliverToBoxAdapter(
-                  child: myRankAsync?.when(
-                    data: (rank) => MyRankBanner(
-                      rank: rank,
-                      totalScore: user.totalScore,
-                      username: user.username,
-                    ),
-                    loading: () => const SizedBox(),
-                    error: (_, __) => const SizedBox(),
-                  ),
-                ),
+              if (index == 1) {
+                return user != null
+                    ? myRankAsync?.when(
+                          data: (rank) => MyRankBanner(
+                            rank: rank,
+                            totalScore: user.totalScore,
+                            username: user.username,
+                          ),
+                          loading: () => const SizedBox(),
+                          error: (_, __) => const SizedBox(),
+                        ) ??
+                        const SizedBox()
+                    : const SizedBox();
+              }
 
-              // Section header
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'All Players',
-                        style: GoogleFonts.poppins(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      Text(
-                        '${entries.length} players',
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // Leaderboard list
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final entry = entries[index];
-                    final isMe = user?.uid == entry.uid;
-                    return LeaderboardRow(
-                      entry: entry,
-                      isCurrentUser: isMe,
-                    );
-                  },
-                  childCount: entries.length,
-                ),
-              ),
-
-              const SliverPadding(
-                  padding: EdgeInsets.only(bottom: 30)),
-            ],
+              // Leaderboard rows
+              final entry = entries[index - 2];
+              final isMe = user?.uid == entry.uid;
+              return LeaderboardRow(
+                  entry: entry, isCurrentUser: isMe);
+            },
           ),
         );
       },
@@ -216,72 +168,40 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
 
     return weeklyAsync.when(
       loading: () => _buildLoader(),
-      error: (e, _) => _buildError('Failed to load weekly board', () {
-        ref.invalidate(weeklyLeaderboardProvider);
-      }),
+      error: (e, _) => _buildError('Failed to load weekly board',
+          () => ref.invalidate(weeklyLeaderboardProvider)),
       data: (entries) {
         if (entries.isEmpty) {
           return _buildEmpty(
-            message: 'No games played this week yet!\nBe the first! 🎮',
+            message:
+                'No games played this week yet!\nBe the first! 🎮',
           );
         }
 
         return RefreshIndicator(
           color: AppColors.primary,
           backgroundColor: AppColors.cardBg,
-          onRefresh: () async {
-            ref.invalidate(weeklyLeaderboardProvider);
-          },
-          child: CustomScrollView(
-            slivers: [
-              // Weekly banner
-              SliverToBoxAdapter(
-                child: _buildWeeklyBanner(),
-              ),
-
-              // Podium
-              if (entries.length >= 3)
-                SliverToBoxAdapter(
-                  child: PodiumWidget(
-                    first: entries[0],
-                    second: entries.length > 1 ? entries[1] : null,
-                    third: entries.length > 2 ? entries[2] : null,
-                  ),
-                ),
-
-              // Section header
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                  child: Text(
-                    'This Week\'s Rankings',
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ),
-              ),
-
-              // List
-              SliverList(
-                delegate: SliverChildBuilderDelegate(
-                  (context, index) {
-                    final entry = entries[index];
-                    final isMe = user?.uid == entry.uid;
-                    return LeaderboardRow(
-                      entry: entry,
-                      isCurrentUser: isMe,
-                    );
-                  },
-                  childCount: entries.length,
-                ),
-              ),
-
-              const SliverPadding(
-                  padding: EdgeInsets.only(bottom: 30)),
-            ],
+          onRefresh: () async =>
+              ref.invalidate(weeklyLeaderboardProvider),
+          child: ListView.builder(
+            padding: const EdgeInsets.only(bottom: 30),
+            itemCount: entries.length + 2,
+            itemBuilder: (context, index) {
+              if (index == 0) return _buildWeeklyBanner();
+              if (index == 1) {
+                return entries.length >= 3
+                    ? PodiumWidget(
+                        first: entries[0],
+                        second: entries[1],
+                        third: entries[2],
+                      )
+                    : const SizedBox();
+              }
+              final entry = entries[index - 2];
+              final isMe = user?.uid == entry.uid;
+              return LeaderboardRow(
+                  entry: entry, isCurrentUser: isMe);
+            },
           ),
         );
       },
@@ -295,10 +215,9 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
 
     return Column(
       children: [
-        // Category selector
-        Container(
+        // Category chips
+        SizedBox(
           height: 56,
-          color: AppColors.background,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(
@@ -321,8 +240,9 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
                         : AppColors.cardBg,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color:
-                          selected ? cat.color : Colors.transparent,
+                      color: selected
+                          ? cat.color
+                          : Colors.transparent,
                       width: 1.5,
                     ),
                   ),
@@ -351,15 +271,15 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
           ),
         ),
 
-        // Leaderboard list
+        // List
         Expanded(
           child: categoryAsync.when(
             loading: () => _buildLoader(),
             error: (e, _) => _buildError(
-                'Failed to load category board', () {
-              ref.invalidate(
-                  categoryLeaderboardProvider(_selectedCategory));
-            }),
+              'Failed to load category board',
+              () => ref.invalidate(
+                  categoryLeaderboardProvider(_selectedCategory)),
+            ),
             data: (entries) {
               if (entries.isEmpty) {
                 return _buildEmpty(
@@ -367,24 +287,19 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
                       'No scores yet in this category.\nPlay to be #1! 🎯',
                 );
               }
-
               return RefreshIndicator(
                 color: AppColors.primary,
                 backgroundColor: AppColors.cardBg,
-                onRefresh: () async {
-                  ref.invalidate(categoryLeaderboardProvider(
-                      _selectedCategory));
-                },
+                onRefresh: () async => ref.invalidate(
+                    categoryLeaderboardProvider(_selectedCategory)),
                 child: ListView.builder(
-                  padding: const EdgeInsets.only(top: 12, bottom: 30),
+                  padding: const EdgeInsets.only(bottom: 30),
                   itemCount: entries.length,
                   itemBuilder: (context, index) {
                     final entry = entries[index];
                     final isMe = user?.uid == entry.uid;
                     return LeaderboardRow(
-                      entry: entry,
-                      isCurrentUser: isMe,
-                    );
+                        entry: entry, isCurrentUser: isMe);
                   },
                 ),
               );
@@ -449,12 +364,10 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
     );
   }
 
-  // ── Helper Widgets ──────────────────────────────────────────────
-  Widget _buildLoader() {
-    return const Center(
-      child: CircularProgressIndicator(color: AppColors.primary),
-    );
-  }
+  Widget _buildLoader() => const Center(
+        child:
+            CircularProgressIndicator(color: AppColors.primary),
+      );
 
   Widget _buildError(String message, VoidCallback onRetry) {
     return Center(
@@ -472,7 +385,8 @@ class _LeaderboardScreenState extends ConsumerState<LeaderboardScreen>
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary),
             child: Text('Retry',
-                style: GoogleFonts.poppins(color: Colors.white)),
+                style:
+                    GoogleFonts.poppins(color: Colors.white)),
           ),
         ],
       ),

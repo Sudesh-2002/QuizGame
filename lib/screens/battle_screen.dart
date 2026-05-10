@@ -11,6 +11,8 @@ import '../providers/multiplayer_provider.dart';
 import '../services/multiplayer_service.dart';
 import '../widgets/option_button.dart';
 import 'battle_result_screen.dart';
+import '../main.dart';
+import 'home_screen.dart';
 
 class BattleScreen extends ConsumerStatefulWidget {
   final RoomModel room;
@@ -150,7 +152,27 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
     });
   }
 
-  void _handleRoomUpdate(RoomModel room, String myUid) {
+  void _handleRoomUpdate(RoomModel? room, String myUid) {
+    // Room deleted (opponent left) — go home cleanly
+    if (room == null) {
+      if (!_navigating && mounted) {
+        _navigating = true;
+        _timer?.cancel();
+        _advanceTimer?.cancel();
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(
+                builder: (_) => const HomeScreen(initialIndex: 2),
+              ),
+              (route) => false,
+            );
+          }
+        });
+      }
+      return;
+    }
+
     // Navigate to result when finished
     if (room.isFinished && !_navigating) {
       _navigating = true;
@@ -158,8 +180,7 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
       _advanceTimer?.cancel();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          Navigator.pushReplacement(
-            context,
+          Navigator.of(context).pushReplacement(
             MaterialPageRoute(
               builder: (_) => BattleResultScreen(room: room),
             ),
@@ -198,9 +219,16 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
       error: (e, _) =>
           _scaffold(Center(child: Text('Error: $e'))),
       data: (room) {
-        if (room == null) return _scaffold(const SizedBox());
-
         final myUid = user?.uid ?? '';
+
+        // Handle null or finished room
+        if (room == null) {
+          _handleRoomUpdate(null, myUid);
+          return _scaffold(const Center(
+            child: CircularProgressIndicator(color: AppColors.primary),
+          ));
+        }
+
         _handleRoomUpdate(room, myUid);
 
         final qIndex = room.currentQuestionIndex;
@@ -232,8 +260,8 @@ class _BattleScreenState extends ConsumerState<BattleScreen>
                 ? AppColors.warning
                 : AppColors.error;
 
-        return WillPopScope(
-          onWillPop: () async => false,
+        return PopScope(
+          canPop: false,
           child: _scaffold(
             Column(
               children: [

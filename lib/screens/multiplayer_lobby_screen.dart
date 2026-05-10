@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../constants/colors.dart';
 import '../data/categories_data.dart';
 import '../models/category_model.dart';
+import '../models/room_model.dart';
 import '../providers/auth_provider.dart';
 import '../providers/multiplayer_provider.dart';
+import '../providers/multiplayer_ad_provider.dart';
+import '../services/ad_service.dart';
 import '../services/multiplayer_service.dart';
 import 'battle_screen.dart';
 import 'battle_waiting_screen.dart';
-import '../models/room_model.dart';
 
 class MultiplayerLobbyScreen extends ConsumerStatefulWidget {
   const MultiplayerLobbyScreen({super.key});
@@ -34,6 +35,11 @@ class _MultiplayerLobbyScreenState
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+
+    // Check if needs ad after 5 battles when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkBattleLimit();
+    });
   }
 
   @override
@@ -43,8 +49,137 @@ class _MultiplayerLobbyScreenState
     super.dispose();
   }
 
-  // ── Create Room ─────────────────────────────────────────────────
-  Future<void> _createRoom() async {
+  // ── Check 5-battle limit ────────────────────────────────────────
+  void _checkBattleLimit() {
+    final count = ref.read(multiplayerBattleCountProvider);
+    if (count > 0 && count % 5 == 0) {
+      _showContinueWithAdDialog();
+    }
+  }
+
+  // ── Continue after 5 battles dialog ────────────────────────────
+  void _showContinueWithAdDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          '🎮 5 Battles Completed!',
+          style: GoogleFonts.poppins(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Great effort! Watch a short ad to continue playing multiplayer battles for free.',
+          style: GoogleFonts.poppins(
+              color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.pop(context); // back to home
+            },
+            child: Text(
+              'Go Home',
+              style: GoogleFonts.poppins(
+                  color: AppColors.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (!AdService().isRewardedReady) {
+                _showError('Ad not ready yet, try again shortly!');
+                return;
+              }
+              AdService().showRewardedAd(
+                onRewarded: () {
+                  // Reset battle count
+                  ref
+                      .read(multiplayerBattleCountProvider.notifier)
+                      .state = 0;
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('✅ Keep battling!'),
+                        backgroundColor: AppColors.success,
+                      ),
+                    );
+                  }
+                },
+              );
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary),
+            child: Text(
+              'Watch Ad & Continue 📺',
+              style: GoogleFonts.poppins(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Show ad dialog before creating room ────────────────────────
+  void _showCreateRoomAdDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          '📺 Watch Ad to Create Room',
+          style: GoogleFonts.poppins(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
+          'Watch a short ad to create a multiplayer room for free!',
+          style: GoogleFonts.poppins(
+              color: AppColors.textSecondary, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(
+                  color: AppColors.textSecondary),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              if (!AdService().isRewardedReady) {
+                _showError('Ad not ready yet, try again shortly!');
+                return;
+              }
+              AdService().showRewardedAd(
+                onRewarded: () => _proceedCreateRoom(),
+              );
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary),
+            child: Text(
+              'Watch Ad 📺',
+              style: GoogleFonts.poppins(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Create Room (called after ad) ───────────────────────────────
+  Future<void> _proceedCreateRoom() async {
     final user = ref.read(userModelProvider);
     if (user == null) return;
 
@@ -61,8 +196,7 @@ class _MultiplayerLobbyScreenState
       ref.read(currentRoomProvider.notifier).state = room;
 
       if (mounted) {
-        Navigator.push(
-          context,
+        Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(
             builder: (_) => BattleWaitingScreen(room: room),
           ),
@@ -75,8 +209,26 @@ class _MultiplayerLobbyScreenState
     }
   }
 
+  // ── Create Room (entry point — shows ad first) ──────────────────
+  void _createRoom() {
+    // Check battle limit first
+    final count = ref.read(multiplayerBattleCountProvider);
+    if (count > 0 && count % 5 == 0) {
+      _showContinueWithAdDialog();
+      return;
+    }
+    _showCreateRoomAdDialog();
+  }
+
   // ── Join Room ───────────────────────────────────────────────────
   Future<void> _joinRoom() async {
+    // Check battle limit
+    final count = ref.read(multiplayerBattleCountProvider);
+    if (count > 0 && count % 5 == 0) {
+      _showContinueWithAdDialog();
+      return;
+    }
+
     final code = _codeController.text.trim();
     if (code.length != 6) {
       _showError('Please enter a 6-digit room code');
@@ -102,8 +254,7 @@ class _MultiplayerLobbyScreenState
       ref.read(currentRoomProvider.notifier).state = room;
 
       if (mounted) {
-        Navigator.push(
-          context,
+        Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(
             builder: (_) => BattleWaitingScreen(room: room),
           ),
@@ -118,19 +269,24 @@ class _MultiplayerLobbyScreenState
 
   // ── Quick Match ─────────────────────────────────────────────────
   Future<void> _quickMatch() async {
+    // Check battle limit
+    final count = ref.read(multiplayerBattleCountProvider);
+    if (count > 0 && count % 5 == 0) {
+      _showContinueWithAdDialog();
+      return;
+    }
+
     final user = ref.read(userModelProvider);
     if (user == null) return;
 
     setState(() => _isLoading = true);
     try {
-      // Try to find open room
       RoomModel? room = await MultiplayerService().quickMatch(
         uid: user.uid,
         username: user.username,
         categoryId: _selectedCategory.id,
       );
 
-      // No open room found → create one
       room ??= await MultiplayerService().createRoom(
         hostUid: user.uid,
         hostUsername: user.username,
@@ -142,8 +298,7 @@ class _MultiplayerLobbyScreenState
       ref.read(currentRoomProvider.notifier).state = room;
 
       if (mounted) {
-        Navigator.push(
-          context,
+        Navigator.of(context, rootNavigator: true).push(
           MaterialPageRoute(
             builder: (_) => BattleWaitingScreen(room: room!),
           ),
@@ -168,6 +323,9 @@ class _MultiplayerLobbyScreenState
 
   @override
   Widget build(BuildContext context) {
+    final battleCount = ref.watch(multiplayerBattleCountProvider);
+    final battlesUntilAd = 5 - (battleCount % 5);
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -181,6 +339,36 @@ class _MultiplayerLobbyScreenState
             color: AppColors.textPrimary,
           ),
         ),
+        // ── Battle count indicator ──────────────────────────────
+        actions: [
+          if (battleCount > 0)
+            Container(
+              margin: const EdgeInsets.only(right: 16),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: battlesUntilAd <= 2
+                    ? AppColors.warning.withOpacity(0.2)
+                    : AppColors.cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: battlesUntilAd <= 2
+                      ? AppColors.warning
+                      : AppColors.inputBg,
+                ),
+              ),
+              child: Text(
+                '⚔️ $battlesUntilAd left',
+                style: GoogleFonts.poppins(
+                  fontSize: 12,
+                  color: battlesUntilAd <= 2
+                      ? AppColors.warning
+                      : AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: TabBar(
@@ -191,7 +379,8 @@ class _MultiplayerLobbyScreenState
             indicatorWeight: 3,
             labelStyle: GoogleFonts.poppins(
                 fontSize: 13, fontWeight: FontWeight.w600),
-            unselectedLabelStyle: GoogleFonts.poppins(fontSize: 13),
+            unselectedLabelStyle:
+                GoogleFonts.poppins(fontSize: 13),
             tabs: const [
               Tab(text: '⚡ Quick Match'),
               Tab(text: '🏠 Create'),
@@ -219,7 +408,6 @@ class _MultiplayerLobbyScreenState
         children: [
           const SizedBox(height: 16),
 
-          // Hero banner
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(28),
@@ -265,9 +453,9 @@ class _MultiplayerLobbyScreenState
 
           const SizedBox(height: 28),
 
-          // Category pick
           _sectionLabel('Pick Category'),
           const SizedBox(height: 12),
+
           SizedBox(
             height: 100,
             child: ListView.builder(
@@ -289,7 +477,8 @@ class _MultiplayerLobbyScreenState
                           : AppColors.cardBg,
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: sel ? cat.color : Colors.transparent,
+                        color:
+                            sel ? cat.color : Colors.transparent,
                         width: 2,
                       ),
                     ),
@@ -297,7 +486,8 @@ class _MultiplayerLobbyScreenState
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(cat.emoji,
-                            style: const TextStyle(fontSize: 28)),
+                            style:
+                                const TextStyle(fontSize: 28)),
                         const SizedBox(height: 6),
                         Text(
                           cat.name.split(' ').first,
@@ -322,7 +512,6 @@ class _MultiplayerLobbyScreenState
 
           const SizedBox(height: 32),
 
-          // Quick match button
           SizedBox(
             width: double.infinity,
             height: 58,
@@ -351,8 +540,6 @@ class _MultiplayerLobbyScreenState
           ),
 
           const SizedBox(height: 24),
-
-          // How it works
           _buildHowItWorks(),
         ],
       ),
@@ -368,10 +555,37 @@ class _MultiplayerLobbyScreenState
         children: [
           const SizedBox(height: 8),
 
+          // ── Ad notice banner ────────────────────────────────────
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                  color: AppColors.primary.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Text('📺', style: TextStyle(fontSize: 20)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Watch a short ad to create a room for free!',
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
           _sectionLabel('Category'),
           const SizedBox(height: 12),
 
-          // Category grid
           GridView.builder(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -387,7 +601,8 @@ class _MultiplayerLobbyScreenState
               final cat = appCategories[i];
               final sel = _selectedCategory.id == cat.id;
               return GestureDetector(
-                onTap: () => setState(() => _selectedCategory = cat),
+                onTap: () =>
+                    setState(() => _selectedCategory = cat),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   decoration: BoxDecoration(
@@ -426,7 +641,6 @@ class _MultiplayerLobbyScreenState
           ),
 
           const SizedBox(height: 24),
-
           _sectionLabel('Difficulty'),
           const SizedBox(height: 12),
 
@@ -444,7 +658,8 @@ class _MultiplayerLobbyScreenState
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding:
+                        const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
                       color: sel
                           ? color.withOpacity(0.15)
@@ -530,13 +745,21 @@ class _MultiplayerLobbyScreenState
               child: _isLoading
                   ? const CircularProgressIndicator(
                       color: Colors.white)
-                  : Text(
-                      '🏠  Create Room',
-                      style: GoogleFonts.poppins(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+                  : Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Text('📺',
+                            style: TextStyle(fontSize: 18)),
+                        const SizedBox(width: 8),
+                        Text(
+                          'Watch Ad & Create Room',
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
             ),
           ),
@@ -552,11 +775,8 @@ class _MultiplayerLobbyScreenState
       child: Column(
         children: [
           const SizedBox(height: 30),
-
           const Text('🔑', style: TextStyle(fontSize: 64)),
-
           const SizedBox(height: 16),
-
           Text(
             'Join a Room',
             style: GoogleFonts.poppins(
@@ -565,7 +785,6 @@ class _MultiplayerLobbyScreenState
               color: AppColors.textPrimary,
             ),
           ),
-
           Text(
             'Enter the 6-digit code\nyour friend shared with you',
             textAlign: TextAlign.center,
@@ -575,10 +794,8 @@ class _MultiplayerLobbyScreenState
               height: 1.5,
             ),
           ),
-
           const SizedBox(height: 40),
 
-          // Code input
           TextField(
             controller: _codeController,
             keyboardType: TextInputType.number,
@@ -657,6 +874,7 @@ class _MultiplayerLobbyScreenState
       ('⚡', 'Instant matching with online players'),
       ('❓', 'Same questions for both players'),
       ('🏆', 'Fastest & most correct answers wins'),
+      ('📺', 'Watch ad every 5 battles to continue'),
     ];
 
     return Container(

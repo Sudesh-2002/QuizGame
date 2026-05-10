@@ -2,29 +2,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/leaderboard_model.dart';
 import '../services/leaderboard_service.dart';
 
-// Tab index provider
-final leaderboardTabProvider = StateProvider<int>((ref) => 0);
+final leaderboardTabProvider =
+    StateProvider<int>((ref) => 0);
 
-// Global leaderboard
+// autoDispose — refetches fresh data every time screen opens
 final globalLeaderboardProvider =
-    FutureProvider<List<LeaderboardEntry>>((ref) async {
+    FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) {
   return LeaderboardService().getGlobalLeaderboard();
 });
 
-// Weekly leaderboard
 final weeklyLeaderboardProvider =
-    FutureProvider<List<LeaderboardEntry>>((ref) async {
+    FutureProvider.autoDispose<List<LeaderboardEntry>>((ref) {
   return LeaderboardService().getWeeklyLeaderboard();
 });
 
-// My rank
-final myRankProvider = FutureProvider.family<int, String>((ref, uid) async {
+final myRankProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, uid) {
   return LeaderboardService().getMyGlobalRank(uid);
 });
 
-// Category leaderboard
 final categoryLeaderboardProvider =
-    FutureProvider.family<List<LeaderboardEntry>, String>(
-        (ref, categoryId) async {
-  return LeaderboardService().getCategoryLeaderboard(categoryId);
+    FutureProvider.autoDispose.family<List<LeaderboardEntry>,
+        String>((ref, categoryId) {
+  return LeaderboardService()
+      .getCategoryLeaderboard(categoryId);
 });
